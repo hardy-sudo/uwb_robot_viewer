@@ -88,12 +88,14 @@ class DahuaRobotService implements RobotService {
         final x = (xMm / mapWidthMm * maxX).clamp(0.0, maxX);
         final y = (yMm / mapHeightMm * maxY).clamp(0.0, maxY);
         final status = _toRobotStatus(state);
+        final deviceState = _toDeviceState(state);
 
         if (_robotMap.containsKey(deviceName)) {
           final r = _robotMap[deviceName]!;
           r.currentX = x;
           r.currentY = y;
           r.status = status;
+          r.deviceState = deviceState;
         } else {
           final color = _palette[colorIdx % _palette.length];
           _robotMap[deviceName] = RobotData(
@@ -102,6 +104,7 @@ class DahuaRobotService implements RobotService {
             currentX: x,
             currentY: y,
             status: status,
+            deviceState: deviceState,
           );
           colorIdx++;
         }
@@ -121,6 +124,16 @@ class DahuaRobotService implements RobotService {
     return switch (state) {
       'InTask' || 'InUpgrading' => RobotStatus.moving,
       _ => RobotStatus.stopped,
+    };
+  }
+
+  /// Dahua 기기 상태 문자열 → DeviceState 변환.
+  /// Fault → fault, Offline → offline, 나머지 → normal
+  DeviceState _toDeviceState(String state) {
+    return switch (state) {
+      'Fault' => DeviceState.fault,
+      'Offline' => DeviceState.offline,
+      _ => DeviceState.normal,
     };
   }
 

@@ -123,16 +123,16 @@ class _RobotScreenState extends State<RobotScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: anyStopped ? Colors.deepOrange.shade50 : Colors.green.shade50,
+        color: anyStopped ? Colors.red.shade50 : Colors.green.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: anyStopped ? Colors.deepOrange : Colors.green,
+          color: anyStopped ? Colors.red : Colors.green,
         ),
       ),
       child: Row(children: [
         Icon(
           anyStopped ? Icons.warning_rounded : Icons.shield,
-          color: anyStopped ? Colors.deepOrange : Colors.green,
+          color: anyStopped ? Colors.red : Colors.green,
           size: 20,
         ),
         const SizedBox(width: 8),
@@ -140,7 +140,7 @@ class _RobotScreenState extends State<RobotScreen> {
           anyStopped ? 'UWB Safety — 정지 중인 로봇 있음' : 'UWB Safety — 전체 안전',
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: anyStopped ? Colors.deepOrange : Colors.green,
+            color: anyStopped ? Colors.red : Colors.green,
           ),
         ),
         const SizedBox(width: 8),
@@ -157,6 +157,8 @@ class _RobotScreenState extends State<RobotScreen> {
   Widget _statusTile(RobotData r) {
     final isStopped = r.status == RobotStatus.stopped;
     final isSafetyStopped = r.safetyState == SafetyState.stoppedBySafety;
+    final isFault = r.deviceState == DeviceState.fault;
+    final isOffline = r.deviceState == DeviceState.offline;
     final uwbDist = _safetyService.latestMinDistances[r.id];
 
     return Padding(
@@ -192,10 +194,16 @@ class _RobotScreenState extends State<RobotScreen> {
 
         // Safety 상태 뱃지
         if (isSafetyStopped)
-          _badge('SAFETY STOP', Colors.deepOrange,
-              icon: Icons.warning_rounded)
+          _badge('SAFETY STOP', Colors.red, icon: Icons.warning_rounded)
         else
           _badge('SAFE', Colors.teal, icon: Icons.shield),
+        const SizedBox(width: 4),
+
+        // 기기 장치 상태 뱃지
+        if (isFault)
+          _badge('FAULT', Colors.yellow.shade700, icon: Icons.error_outline)
+        else if (isOffline)
+          _badge('OFFLINE', Colors.grey, icon: Icons.wifi_off),
         const SizedBox(width: 8),
 
         // UWB 거리
@@ -297,14 +305,22 @@ class _RobotScreenState extends State<RobotScreen> {
 
     final isStopped = r.status == RobotStatus.stopped;
     final isSafetyStopped = r.safetyState == SafetyState.stoppedBySafety;
+    final isFault = r.deviceState == DeviceState.fault;
+    final isOffline = r.deviceState == DeviceState.offline;
 
     Color dotColor;
     IconData? overlayIcon;
     if (isSafetyStopped) {
-      dotColor = Colors.deepOrange;
+      dotColor = Colors.red;
       overlayIcon = Icons.warning_rounded;
-    } else if (isStopped) {
+    } else if (isFault) {
+      dotColor = Colors.yellow.shade700;
+      overlayIcon = Icons.error_outline;
+    } else if (isOffline) {
       dotColor = Colors.grey;
+      overlayIcon = Icons.wifi_off;
+    } else if (isStopped) {
+      dotColor = Colors.grey.shade400;
       overlayIcon = Icons.stop;
     } else {
       dotColor = r.color;
@@ -315,14 +331,32 @@ class _RobotScreenState extends State<RobotScreen> {
       top: (1 - r.currentY / maxY) * h - totalHeight / 2,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Stack(alignment: Alignment.center, children: [
-          // Safety stop 시 주황 링 표시
+          // 상태별 링 표시
           if (isSafetyStopped)
             Container(
               width: dotSize + 8,
               height: dotSize + 8,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.deepOrange, width: 2),
+                border: Border.all(color: Colors.red, width: 2),
+              ),
+            )
+          else if (isFault)
+            Container(
+              width: dotSize + 8,
+              height: dotSize + 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.yellow.shade700, width: 2),
+              ),
+            )
+          else if (isOffline)
+            Container(
+              width: dotSize + 8,
+              height: dotSize + 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey, width: 2),
               ),
             ),
           RobotDot(color: dotColor),
