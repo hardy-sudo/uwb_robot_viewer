@@ -124,31 +124,45 @@ class DahuaRobotService implements RobotService {
     };
   }
 
-  // ── 정지 명령 ──────────────────────────────────────────────────────────────
+  // ── 정지 / 재가동 명령 ────────────────────────────────────────────────────
 
   @override
   void sendStop(String robotId) {
-    // 낙관적 UI 업데이트: 즉시 stopped 상태로 표시
     if (_robotMap.containsKey(robotId)) {
       _robotMap[robotId]!.status = RobotStatus.stopped;
       _controller.add(List.from(_robotMap.values));
     }
-    _controlDevice(robotId, controlWay: 0); // 0 = Pause
+    _controlDevice(robotId, controlWay: 0, stopType: 1); // 즉시 정지 (Safety)
   }
 
-  Future<void> _controlDevice(String deviceNumber, {required int controlWay}) async {
+  @override
+  void sendResume(String robotId) {
+    if (_robotMap.containsKey(robotId)) {
+      _robotMap[robotId]!.status = RobotStatus.moving;
+      _controller.add(List.from(_robotMap.values));
+    }
+    _controlDevice(robotId, controlWay: 1);
+  }
+
+  Future<void> _controlDevice(
+    String deviceNumber, {
+    required int controlWay,
+    int? stopType,
+  }) async {
     try {
+      final body = <String, dynamic>{
+        'areaId': areaId,
+        'deviceNumber': deviceNumber,
+        'all': 0,
+        'controlWay': controlWay,
+      };
+      if (stopType != null) body['stopType'] = stopType;
+
       await http
           .post(
             Uri.parse('$baseUrl/ics/out/controlDevice'),
             headers: {'Content-Type': 'application/json; charset=utf-8'},
-            body: jsonEncode({
-              'areaId': areaId,
-              'deviceNumber': deviceNumber,
-              'all': 0,
-              'controlWay': controlWay,
-              'stopType': 0, // 다음 QR코드까지 부드럽게 정지
-            }),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 5));
     } catch (_) {

@@ -32,12 +32,17 @@ class MockRobotService implements RobotService {
   @override
   Stream<List<RobotData>> get stream => _controller.stream;
 
-  /// 나중에 실제 WebSocket으로 교체:
-  /// _channel.sink.add(jsonEncode({'cmd': 'stop', 'id': robotId}));
   @override
   void sendStop(String robotId) {
     final robot = _robots.firstWhere((r) => r.id == robotId);
     robot.status = RobotStatus.stopped;
+    _controller.add(List.from(_robots));
+  }
+
+  @override
+  void sendResume(String robotId) {
+    final robot = _robots.firstWhere((r) => r.id == robotId);
+    robot.status = RobotStatus.moving;
     _controller.add(List.from(_robots));
   }
 
