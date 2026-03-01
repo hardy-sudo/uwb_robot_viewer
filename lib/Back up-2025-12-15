@@ -1,0 +1,703 @@
+import 'package:flutter/material.dart';
+
+const hammerYellow = Color(0xFFF1C342);
+
+void main() {
+  runApp(const MyApp());
+}
+
+// ================== APP ROOT ==================
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'HAMMER',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
+      ),
+      home: const LoginScreen(),
+    );
+  }
+}
+
+// ================== LOGIN SCREEN ==================
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _idCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
+  String? _error;
+
+  final String _demoId = 'hardy';
+  final String _demoPw = '1234';
+
+  @override
+  void dispose() {
+    _idCtrl.dispose();
+    _pwCtrl.dispose();
+    super.dispose();
+  }
+
+  void _login() {
+    final id = _idCtrl.text.trim();
+    final pw = _pwCtrl.text;
+
+    if (id == _demoId && pw == _demoPw) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const ContextSelectScreen()),
+      );
+    } else {
+      setState(() => _error = '아이디 또는 비밀번호가 올바르지 않습니다.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: hammerYellow,
+body: Stack(
+  children: [
+    // ✅ 배경 로고 (무조건 보이게 크게)
+    Positioned.fill(
+      child: Center(
+        child: Image.asset(
+          'assets/hammer_industry.png',
+          width: 900,
+          fit: BoxFit.contain,
+        ),
+      ),
+    ),
+
+    // ✅ 노란색 오버레이(로고를 은은하게 만들기)
+    Positioned.fill(
+      child: Container(
+        color: hammerYellow.withOpacity(0.85),
+      ),
+    ),
+          // ✅ 로그인 카드
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Card(
+                  elevation: 10,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'HAMMER',
+                          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _idCtrl,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'ID',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _pwCtrl,
+                          obscureText: true,
+                          onSubmitted: (_) => _login(),
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                          ),
+                        ElevatedButton(
+                          onPressed: _login,
+                          child: const Text('Sign in'),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Demo: id=hardy / pw=1234',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ================== CONTEXT MODEL ==================
+
+class AppContext {
+  final String region; // KR / US
+  final String site; // Office / ICN
+  final String floor; // 1F..4F
+
+  const AppContext({
+    required this.region,
+    required this.site,
+    required this.floor,
+  });
+
+  String get breadcrumb => '$region > $site > $floor';
+}
+
+// ================== CONTEXT SELECT SCREEN ==================
+
+class ContextSelectScreen extends StatefulWidget {
+  const ContextSelectScreen({super.key});
+
+  @override
+  State<ContextSelectScreen> createState() => _ContextSelectScreenState();
+}
+
+class _ContextSelectScreenState extends State<ContextSelectScreen> {
+  final List<String> regions = const ['KR', 'US'];
+  final List<String> sites = const ['Office', 'ICN'];
+  final List<String> floors = const ['1F', '2F', '3F', '4F'];
+
+  int _step = 0;
+  String? _region;
+  String? _site;
+  String? _floor;
+
+  bool get _canEnter => _region != null && _site != null && _floor != null;
+
+  void _logout() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  void _enter() {
+    final ctx = AppContext(region: _region!, site: _site!, floor: _floor!);
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: hammerYellow,
+      appBar: AppBar(
+        backgroundColor: hammerYellow,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: const Text('Select Context'),
+        actions: [
+          TextButton(onPressed: _logout, child: const Text('Logout')),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+  children: [
+    // ================== 1. 배경 로고 ==================
+    Positioned.fill(
+      child: Image.asset(
+        'assets/hammer_industry.png', // ← 실제 로고 경로
+        width:900, //
+        fit: BoxFit.contain, 
+        alignment: Alignment.center,
+      ),
+    ),
+
+    // ================== 2. 노랑 오버레이 ==================
+    Positioned.fill(
+      child: Container(
+        color: hammerYellow.withOpacity(0.88),
+      ),
+    ),
+
+    // ================== 3. 기존 Context 선택 UI ==================
+    Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Card(
+            elevation: 10,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Stepper(
+                currentStep: _step,
+                onStepTapped: (i) => setState(() => _step = i),
+                controlsBuilder: (context, details) {
+                  final isLast = _step == 2;
+                  return Row(
+                    children: [
+                      ElevatedButton(
+                        onPressed: isLast
+                            ? (_canEnter ? _enter : null)
+                            : details.onStepContinue,
+                        child: Text(isLast ? 'Enter' : 'Next'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed:
+                            _step == 0 ? null : details.onStepCancel,
+                        child: const Text('Back'),
+                      ),
+                    ],
+                  );
+                },
+                onStepContinue: () =>
+                  setState(() => _step = (_step + 1).clamp(0, 2)),
+                onStepCancel: () =>
+                  setState(() => _step = (_step - 1).clamp(0, 2)),
+                steps: [
+                   Step(
+                      title: const Text('Region'),
+                      subtitle: Text(_region ?? 'Select KR / US'),
+                      isActive: _step >= 0,
+                      content: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: regions
+                            .map(
+                              (r) => ChoiceChip(
+                                label: Text(r),
+                                selected: _region == r,
+                                onSelected: (_) => setState(() {
+                                  _region = r;
+                                  _site = null;
+                                  _floor = null;
+                                }),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                    Step(
+                      title: const Text('Site / Location'),
+                      subtitle: Text(_site ?? 'Select Office / ICN'),
+                      isActive: _step >= 1,
+                      content: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: sites
+                            .map(
+                              (s) => ChoiceChip(
+                                label: Text(s),
+                                selected: _site == s,
+                                onSelected: _region == null
+                                    ? null
+                                    : (_) => setState(() {
+                                          _site = s;
+                                          _floor = null;
+                                        }),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                    Step(
+                      title: const Text('Floor'),
+                      subtitle: Text(_floor ?? 'Select 1F~4F'),
+                      isActive: _step >= 2,
+                      content: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: floors
+                            .map(
+                              (f) => ChoiceChip(
+                                label: Text(f),
+                                selected: _floor == f,
+                                onSelected: (_region == null || _site == null)
+                                    ? null
+                                    : (_) => setState(() => _floor = f),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+  ],
+),
+    );
+  }
+}
+// ================== ROUTER SCREEN (MAP SELECTOR) ==================
+
+class RobotMapRouterScreen extends StatelessWidget {
+  const RobotMapRouterScreen({super.key, required this.ctx});
+
+  final AppContext ctx;
+
+  @override
+  Widget build(BuildContext context) {
+    // ✅ Map 화면은 “노랑 제외” 조건 → 흰색
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: Text(ctx.breadcrumb),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const ContextSelectScreen()),
+              );
+            },
+            child: const Text('Change'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: _resolveMap(ctx),
+    );
+  }
+
+  Widget _resolveMap(AppContext ctx) {
+    // ✅ 오직 이 조합만 RobotScreen(기존 지도)
+    if (ctx.region == 'KR' && ctx.site == 'Office' && ctx.floor == '2F') {
+      return const RobotScreen();
+    }
+    // ❌ 그 외 전부
+    return _NoMapYet(ctx: ctx);
+  }
+}
+
+class _NoMapYet extends StatelessWidget {
+  const _NoMapYet({required this.ctx});
+  final AppContext ctx;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'No map configured for\n${ctx.breadcrumb}',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 18),
+      ),
+    );
+  }
+}
+
+// ================== ROBOT MAP (YOUR LEGACY MAP) ==================
+
+// ================== 로봇 데이터 모델 ==================
+
+class RobotData {
+  RobotData({
+    required this.id,
+    required this.color,
+    required this.currentX,
+    required this.currentY,
+  });
+
+  final String id;
+  final Color color;
+
+  double currentX;
+  double currentY;
+}
+
+// ================== 로봇 화면 ==================
+
+class RobotScreen extends StatefulWidget {
+  const RobotScreen({super.key});
+
+  @override
+  State<RobotScreen> createState() => _RobotScreenState();
+}
+
+class _RobotScreenState extends State<RobotScreen> {
+  // 작업 구역 크기 (m)
+  final double maxX = 6.0;
+  final double maxY = 6.0;
+
+  late final List<RobotData> robots;
+
+  late final Map<String, TextEditingController> xCtrl;
+  late final Map<String, TextEditingController> yCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 초기 좌표 (원하는 값으로 수정 가능)
+    robots = [
+      RobotData(id: 'R1', color: Colors.blue, currentX: 1.0, currentY: 1.0),
+      RobotData(id: 'R2', color: Colors.green, currentX: 3.0, currentY: 2.0),
+      RobotData(id: 'R3', color: Colors.orange, currentX: 5.0, currentY: 5.0),
+    ];
+
+    // 입력 UI 컨트롤러 세팅
+    xCtrl = {
+      for (final r in robots) r.id: TextEditingController(text: r.currentX.toStringAsFixed(2)),
+    };
+    yCtrl = {
+      for (final r in robots) r.id: TextEditingController(text: r.currentY.toStringAsFixed(2)),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final c in xCtrl.values) {
+      c.dispose();
+    }
+    for (final c in yCtrl.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _applyCoordinates() {
+    setState(() {
+      for (final r in robots) {
+        final x = double.tryParse(xCtrl[r.id]!.text);
+        final y = double.tryParse(yCtrl[r.id]!.text);
+
+        if (x != null) r.currentX = x.clamp(0.0, maxX);
+        if (y != null) r.currentY = y.clamp(0.0, maxY);
+
+        // 화면에 반영된 값으로 입력칸도 정리(소수 2자리)
+        xCtrl[r.id]!.text = r.currentX.toStringAsFixed(2);
+        yCtrl[r.id]!.text = r.currentY.toStringAsFixed(2);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ✅ RobotMapRouterScreen의 AppBar가 breadcrumb를 이미 보여주므로
+    // 여기 RobotScreen 내부 AppBar는 제거하고 body만 반환하도록 해도 되지만,
+    // 지금은 기존 코드 그대로 유지하되 AppBar는 숨김 처리(겹침 방지).
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('로봇 위치 보기 (좌표 기반)'),
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ====== 맵 영역 ======
+              AspectRatio(
+                aspectRatio: 1,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final h = constraints.maxHeight;
+
+                    return Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                      ),
+                      child: Stack(
+                        children: [
+                          // (옵션) 간단 그리드 표시
+                          Positioned.fill(child: _GridOverlay(maxX: maxX, maxY: maxY)),
+
+                          for (final robot in robots) _buildRobotOnMap(robot, w, h),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // ====== 좌표 입력 ======
+              const Text(
+                '좌표 입력 (m)  —  0~6 범위',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+
+              for (final r in robots)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          r.id,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: xCtrl[r.id],
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'X',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: yCtrl[r.id],
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Y',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton(
+                  onPressed: _applyCoordinates,
+                  child: const Text('Apply'),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ====== 현재 좌표 리스트 ======
+              const Text(
+                '현재 로봇 위치',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ...robots.map(
+                (r) => Text(
+                  '${r.id}: X=${r.currentX.toStringAsFixed(2)} m, '
+                  'Y=${r.currentY.toStringAsFixed(2)} m',
+                ),
+              ),
+
+              const SizedBox(height: 10),
+              const Text(
+                '※ 이제부터는 “좌표값”이 바뀌면 그 좌표대로 위치만 표시합니다. (자동 이동 없음)',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 맵 위에 로봇 하나 그리는 함수
+  Widget _buildRobotOnMap(RobotData robot, double w, double h) {
+    final pxX = (robot.currentX / maxX) * w;
+    final pxY = (1 - robot.currentY / maxY) * h;
+
+    return Positioned(
+      left: pxX - 12,
+      top: pxY - 12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RobotDot(color: robot.color),
+          const SizedBox(height: 2),
+          Text(
+            robot.id,
+            style: const TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 색깔 있는 동그라미
+class RobotDot extends StatelessWidget {
+  const RobotDot({super.key, required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+      ),
+    );
+  }
+}
+
+// (옵션) 맵 그리드 오버레이
+class _GridOverlay extends StatelessWidget {
+  const _GridOverlay({required this.maxX, required this.maxY});
+
+  final double maxX;
+  final double maxY;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _GridPainter(maxX: maxX, maxY: maxY),
+    );
+  }
+}
+
+class _GridPainter extends CustomPainter {
+  _GridPainter({required this.maxX, required this.maxY});
+
+  final double maxX;
+  final double maxY;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    // 1m 간격 그리드 (0~6)
+    for (int i = 0; i <= maxX.toInt(); i++) {
+      final x = (i / maxX) * size.width;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (int j = 0; j <= maxY.toInt(); j++) {
+      final y = (j / maxY) * size.height;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}

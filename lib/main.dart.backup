@@ -1,0 +1,873 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+const hammerYellow = Color(0xFFF1C342);
+
+void main() {
+  runApp(const MyApp());
+}
+
+// ================== APP ROOT ==================
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'HAMMER',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
+      ),
+      home: const LoginScreen(),
+    );
+  }
+}
+
+// ================== LOGIN SCREEN ==================
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _idCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
+  String? _error;
+
+  final String _demoId = 'hardy';
+  final String _demoPw = '1234';
+
+  @override
+  void dispose() {
+    _idCtrl.dispose();
+    _pwCtrl.dispose();
+    super.dispose();
+  }
+
+  void _login() {
+    final id = _idCtrl.text.trim();
+    final pw = _pwCtrl.text;
+
+    if (id == _demoId && pw == _demoPw) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const ContextSelectScreen()),
+      );
+    } else {
+      setState(() => _error = '아이디 또는 비밀번호가 올바르지 않습니다.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: hammerYellow,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Center(
+              child: Image.asset(
+                'assets/hammer_industry.png',
+                width: 900,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: hammerYellow.withOpacity(0.85),
+            ),
+          ),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Card(
+                  elevation: 10,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'HAMMER',
+                          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _idCtrl,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'ID',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _pwCtrl,
+                          obscureText: true,
+                          onSubmitted: (_) => _login(),
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                          ),
+                        ElevatedButton(
+                          onPressed: _login,
+                          child: const Text('Sign in'),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Demo: id=hardy / pw=1234',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================== CONTEXT MODEL ==================
+
+class AppContext {
+  final String region;
+  final String site;
+  final String floor;
+
+  const AppContext({
+    required this.region,
+    required this.site,
+    required this.floor,
+  });
+
+  String get breadcrumb => '$region > $site > $floor';
+}
+
+// ================== CONTEXT SELECT SCREEN ==================
+
+class ContextSelectScreen extends StatefulWidget {
+  const ContextSelectScreen({super.key});
+
+  @override
+  State<ContextSelectScreen> createState() => _ContextSelectScreenState();
+}
+
+class _ContextSelectScreenState extends State<ContextSelectScreen> {
+  final List<String> regions = const ['KR', 'US'];
+  final List<String> sites = const ['Office', 'ICN'];
+  final List<String> floors = const ['1F', '2F', '3F', '4F'];
+
+  int _step = 0;
+  String? _region;
+  String? _site;
+  String? _floor;
+
+  bool get _canEnter => _region != null && _site != null && _floor != null;
+
+  void _logout() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  void _enter() {
+    final ctx = AppContext(region: _region!, site: _site!, floor: _floor!);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: hammerYellow,
+      appBar: AppBar(
+        backgroundColor: hammerYellow,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: const Text('Select Context'),
+        actions: [
+          TextButton(onPressed: _logout, child: const Text('Logout')),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/hammer_industry.png',
+              width: 900,
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: hammerYellow.withOpacity(0.88),
+            ),
+          ),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Card(
+                  elevation: 10,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Stepper(
+                      currentStep: _step,
+                      onStepTapped: (i) => setState(() => _step = i),
+                      controlsBuilder: (context, details) {
+                        final isLast = _step == 2;
+                        return Row(
+                          children: [
+                            ElevatedButton(
+                              onPressed: isLast
+                                  ? (_canEnter ? _enter : null)
+                                  : details.onStepContinue,
+                              child: Text(isLast ? 'Enter' : 'Next'),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              onPressed: _step == 0 ? null : details.onStepCancel,
+                              child: const Text('Back'),
+                            ),
+                          ],
+                        );
+                      },
+                      onStepContinue: () =>
+                          setState(() => _step = (_step + 1).clamp(0, 2)),
+                      onStepCancel: () =>
+                          setState(() => _step = (_step - 1).clamp(0, 2)),
+                      steps: [
+                        Step(
+                          title: const Text('Region'),
+                          subtitle: Text(_region ?? 'Select KR / US'),
+                          isActive: _step >= 0,
+                          content: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: regions
+                                .map((r) => ChoiceChip(
+                                      label: Text(r),
+                                      selected: _region == r,
+                                      onSelected: (_) => setState(() {
+                                        _region = r;
+                                        _site = null;
+                                        _floor = null;
+                                      }),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                        Step(
+                          title: const Text('Site / Location'),
+                          subtitle: Text(_site ?? 'Select Office / ICN'),
+                          isActive: _step >= 1,
+                          content: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: sites
+                                .map((s) => ChoiceChip(
+                                      label: Text(s),
+                                      selected: _site == s,
+                                      onSelected: _region == null
+                                          ? null
+                                          : (_) => setState(() {
+                                                _site = s;
+                                                _floor = null;
+                                              }),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                        Step(
+                          title: const Text('Floor'),
+                          subtitle: Text(_floor ?? 'Select 1F~4F'),
+                          isActive: _step >= 2,
+                          content: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: floors
+                                .map((f) => ChoiceChip(
+                                      label: Text(f),
+                                      selected: _floor == f,
+                                      onSelected:
+                                          (_region == null || _site == null)
+                                              ? null
+                                              : (_) =>
+                                                  setState(() => _floor = f),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================== ROUTER SCREEN ==================
+
+class RobotMapRouterScreen extends StatelessWidget {
+  const RobotMapRouterScreen({super.key, required this.ctx});
+
+  final AppContext ctx;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: Text(ctx.breadcrumb),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const ContextSelectScreen()),
+            ),
+            child: const Text('Change'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: _resolveMap(ctx),
+    );
+  }
+
+  Widget _resolveMap(AppContext ctx) {
+    if (ctx.region == 'KR' && ctx.site == 'Office' && ctx.floor == '2F') {
+      // ✅ WebSocket URL을 실제 서버 주소로 교체하세요
+      // 예: ws://192.168.1.100:8765
+      const wsUrl = 'ws://YOUR_SERVER_IP:8765';
+      return RobotScreen(wsUrl: wsUrl);
+    }
+    return _NoMapYet(ctx: ctx);
+  }
+}
+
+class _NoMapYet extends StatelessWidget {
+  const _NoMapYet({required this.ctx});
+  final AppContext ctx;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'No map configured for\n${ctx.breadcrumb}',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 18),
+      ),
+    );
+  }
+}
+
+// ================== 로봇 데이터 모델 ==================
+
+class RobotData {
+  RobotData({
+    required this.id,
+    required this.color,
+    required this.currentX,
+    required this.currentY,
+  });
+
+  final String id;
+  final Color color;
+  double currentX;
+  double currentY;
+}
+
+// ================== WebSocket 서비스 ==================
+//
+// 서버에서 아래 JSON 형식으로 데이터를 보내주면 됩니다:
+//
+// [
+//   {"id": "R1", "x": 1.5, "y": 2.3},
+//   {"id": "R2", "x": 3.0, "y": 4.1},
+//   {"id": "R3", "x": 5.2, "y": 0.8}
+// ]
+//
+// 또는 단일 로봇 업데이트:
+// {"id": "R1", "x": 2.0, "y": 3.5}
+
+class RobotWebSocketService {
+  RobotWebSocketService({required this.url});
+
+  final String url;
+  WebSocketChannel? _channel;
+  StreamController<List<Map<String, dynamic>>>? _controller;
+
+  Stream<List<Map<String, dynamic>>> get stream =>
+      _controller!.stream;
+
+  ConnectionState _state = ConnectionState.none;
+  ConnectionState get state => _state;
+
+  void connect() {
+    _controller = StreamController<List<Map<String, dynamic>>>.broadcast();
+
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(url));
+      _state = ConnectionState.active;
+
+      _channel!.stream.listen(
+        (data) {
+          try {
+            final decoded = jsonDecode(data as String);
+            // 배열로 오면 그대로, 단일 객체면 리스트로 감싸기
+            if (decoded is List) {
+              _controller!.add(List<Map<String, dynamic>>.from(decoded));
+            } else if (decoded is Map) {
+              _controller!.add([Map<String, dynamic>.from(decoded)]);
+            }
+          } catch (e) {
+            debugPrint('[WS] JSON 파싱 오류: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('[WS] 오류: $error');
+          _state = ConnectionState.done;
+          _controller!.addError(error);
+        },
+        onDone: () {
+          debugPrint('[WS] 연결 종료');
+          _state = ConnectionState.done;
+          _controller!.close();
+        },
+      );
+    } catch (e) {
+      debugPrint('[WS] 연결 실패: $e');
+      _state = ConnectionState.done;
+    }
+  }
+
+  void disconnect() {
+    _channel?.sink.close();
+    _controller?.close();
+  }
+}
+
+// ================== 로봇 화면 ==================
+
+class RobotScreen extends StatefulWidget {
+  const RobotScreen({super.key, required this.wsUrl});
+
+  final String wsUrl;
+
+  @override
+  State<RobotScreen> createState() => _RobotScreenState();
+}
+
+class _RobotScreenState extends State<RobotScreen> {
+  final double maxX = 6.0;
+  final double maxY = 6.0;
+
+  // 기본 색상 매핑 (서버에서 id만 오면 자동 색상 부여)
+  final Map<String, Color> _colorMap = {
+    'R1': Colors.blue,
+    'R2': Colors.green,
+    'R3': Colors.orange,
+    'R4': Colors.purple,
+    'R5': Colors.red,
+  };
+
+  late final List<Color> _fallbackColors = [
+    Colors.teal,
+    Colors.pink,
+    Colors.indigo,
+    Colors.brown,
+    Colors.cyan,
+  ];
+
+  Map<String, RobotData> _robots = {};
+  late RobotWebSocketService _wsService;
+
+  // 연결 상태
+  bool _isConnected = false;
+  bool _isConnecting = true;
+  String? _errorMsg;
+
+  // 마지막 업데이트 시간
+  DateTime? _lastUpdated;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectWebSocket();
+  }
+
+  void _connectWebSocket() {
+    setState(() {
+      _isConnecting = true;
+      _errorMsg = null;
+    });
+
+    _wsService = RobotWebSocketService(url: widget.wsUrl);
+    _wsService.connect();
+
+    _wsService.stream.listen(
+      (updates) {
+        setState(() {
+          _isConnected = true;
+          _isConnecting = false;
+          _lastUpdated = DateTime.now();
+
+          for (final update in updates) {
+            final id = update['id'] as String?;
+            final x = (update['x'] as num?)?.toDouble();
+            final y = (update['y'] as num?)?.toDouble();
+
+            if (id == null || x == null || y == null) continue;
+
+            if (_robots.containsKey(id)) {
+              _robots[id]!.currentX = x.clamp(0.0, maxX);
+              _robots[id]!.currentY = y.clamp(0.0, maxY);
+            } else {
+              // 새 로봇 자동 추가
+              final color = _colorMap[id] ??
+                  _fallbackColors[_robots.length % _fallbackColors.length];
+              _robots[id] = RobotData(
+                id: id,
+                color: color,
+                currentX: x.clamp(0.0, maxX),
+                currentY: y.clamp(0.0, maxY),
+              );
+            }
+          }
+        });
+      },
+      onError: (error) {
+        setState(() {
+          _isConnected = false;
+          _isConnecting = false;
+          _errorMsg = '연결 오류: $error';
+        });
+      },
+      onDone: () {
+        setState(() {
+          _isConnected = false;
+          _isConnecting = false;
+          _errorMsg = 'WebSocket 연결이 끊겼습니다.';
+        });
+      },
+    );
+
+    // 5초 후에도 연결 안 되면 타임아웃 표시
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted && _isConnecting) {
+        setState(() {
+          _isConnecting = false;
+          _errorMsg = '서버에 연결할 수 없습니다.\n(${ widget.wsUrl})';
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _wsService.disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ✅ 버그 수정: RobotMapRouterScreen의 AppBar가 있으므로
+    // 여기선 Scaffold 없이 body 내용만 반환
+    return Column(
+      children: [
+        // ── 연결 상태 배너 ──
+        _buildStatusBar(),
+
+        // ── 맵 + 로봇 리스트 ──
+        Expanded(
+          child: _isConnecting
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMsg != null && _robots.isEmpty
+                  ? _buildErrorView()
+                  : SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ── 맵 ──
+                            AspectRatio(
+                              aspectRatio: 1,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final w = constraints.maxWidth;
+                                  final h = constraints.maxHeight;
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.grey),
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: _GridOverlay(
+                                              maxX: maxX, maxY: maxY),
+                                        ),
+                                        for (final robot in _robots.values)
+                                          _buildRobotOnMap(robot, w, h),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── 로봇 위치 리스트 ──
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  '현재 로봇 위치',
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                if (_lastUpdated != null)
+                                  Text(
+                                    '마지막 업데이트: ${_formatTime(_lastUpdated!)}',
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.grey),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            if (_robots.isEmpty)
+                              const Text(
+                                '서버에서 데이터를 기다리는 중...',
+                                style: TextStyle(color: Colors.grey),
+                              )
+                            else
+                              ..._robots.values.map(
+                                (r) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: r.color,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '${r.id}:  X = ${r.currentX.toStringAsFixed(2)} m,  '
+                                        'Y = ${r.currentY.toStringAsFixed(2)} m',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                            const SizedBox(height: 16),
+                            const Text(
+                              '※ WebSocket으로 실시간 업데이트 중',
+                              style:
+                                  TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusBar() {
+    if (_isConnecting) {
+      return Container(
+        color: Colors.orange.shade100,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 8),
+            Text('WebSocket 연결 중...', style: TextStyle(fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    if (_isConnected) {
+      return Container(
+        color: Colors.green.shade100,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: const Row(
+          children: [
+            Icon(Icons.circle, color: Colors.green, size: 12),
+            SizedBox(width: 8),
+            Text('실시간 연결됨', style: TextStyle(fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      color: Colors.red.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.circle, color: Colors.red, size: 12),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text('연결 끊김', style: TextStyle(fontSize: 13)),
+          ),
+          TextButton(
+            onPressed: _connectWebSocket,
+            child: const Text('재연결'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.wifi_off, size: 60, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(
+            _errorMsg!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _connectWebSocket,
+            icon: const Icon(Icons.refresh),
+            label: const Text('재연결'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRobotOnMap(RobotData robot, double w, double h) {
+    final pxX = (robot.currentX / maxX) * w;
+    final pxY = (1 - robot.currentY / maxY) * h;
+
+    return Positioned(
+      left: pxX - 12,
+      top: pxY - 12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RobotDot(color: robot.color),
+          const SizedBox(height: 2),
+          Text(robot.id, style: const TextStyle(fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+}
+
+// ================== 공통 위젯 ==================
+
+class RobotDot extends StatelessWidget {
+  const RobotDot({super.key, required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+  }
+}
+
+class _GridOverlay extends StatelessWidget {
+  const _GridOverlay({required this.maxX, required this.maxY});
+  final double maxX;
+  final double maxY;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _GridPainter(maxX: maxX, maxY: maxY));
+  }
+}
+
+class _GridPainter extends CustomPainter {
+  _GridPainter({required this.maxX, required this.maxY});
+  final double maxX;
+  final double maxY;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = Colors.grey.shade300;
+
+    for (int i = 0; i <= maxX.toInt(); i++) {
+      final x = (i / maxX) * size.width;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (int j = 0; j <= maxY.toInt(); j++) {
+      final y = (j / maxY) * size.height;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
