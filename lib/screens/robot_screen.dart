@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/robot_data.dart';
+import '../services/mock_robot_service.dart';
+import '../services/robot_service.dart';
 import '../widgets/robot_dot.dart';
 import '../widgets/grid_overlay.dart';
 
@@ -12,85 +15,132 @@ class RobotScreen extends StatefulWidget {
 class _RobotScreenState extends State<RobotScreen> {
   final double maxX = 6.0;
   final double maxY = 6.0;
-  late final List<RobotData> robots;
-  late final Map<String, TextEditingController> xCtrl, yCtrl;
+
+  late final RobotService _service;
+  late final StreamSubscription<List<RobotData>> _sub;
+  List<RobotData> _robots = [];
 
   @override
   void initState() {
     super.initState();
-    robots = [
-      RobotData(id: 'R1', color: Colors.blue,   currentX: 1.0, currentY: 1.0),
-      RobotData(id: 'R2', color: Colors.green,  currentX: 3.0, currentY: 2.0),
-      RobotData(id: 'R3', color: Colors.orange, currentX: 5.0, currentY: 5.0),
-    ];
-    xCtrl = { for (final r in robots) r.id: TextEditingController(text: r.currentX.toStringAsFixed(2)) };
-    yCtrl = { for (final r in robots) r.id: TextEditingController(text: r.currentY.toStringAsFixed(2)) };
+    // TODO: 실제 WebSocket 준비되면 WebSocketRobotService()로 교체
+    _service = MockRobotService();
+    _sub = _service.stream.listen((robots) {
+      setState(() => _robots = robots);
+    });
   }
 
   @override
   void dispose() {
-    for (final c in xCtrl.values) c.dispose();
-    for (final c in yCtrl.values) c.dispose();
+    _sub.cancel();
+    _service.dispose();
     super.dispose();
-  }
-
-  void _apply() {
-    setState(() {
-      for (final r in robots) {
-        final x = double.tryParse(xCtrl[r.id]!.text);
-        final y = double.tryParse(yCtrl[r.id]!.text);
-        if (x != null) r.currentX = x.clamp(0.0, maxX);
-        if (y != null) r.currentY = y.clamp(0.0, maxY);
-        xCtrl[r.id]!.text = r.currentX.toStringAsFixed(2);
-        yCtrl[r.id]!.text = r.currentY.toStringAsFixed(2);
-      }
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Padding(padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          AspectRatio(aspectRatio: 1, child: LayoutBuilder(builder: (context, constraints) {
-            final w = constraints.maxWidth, h = constraints.maxHeight;
-            return Container(
-              decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
-              child: Stack(children: [
-                Positioned.fill(child: GridOverlay(maxX: maxX, maxY: maxY)),
-                for (final r in robots) _marker(r, w, h),
-              ]));
-          })),
-          const SizedBox(height: 20),
-          const Text('좌표 입력 (m) — 0~6 범위', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          for (final r in robots) Padding(padding: const EdgeInsets.only(bottom: 10),
-            child: Row(children: [
-              SizedBox(width: 40, child: Text(r.id, style: const TextStyle(fontWeight: FontWeight.w600))),
-              Expanded(child: TextField(controller: xCtrl[r.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'X', isDense: true, border: OutlineInputBorder()))),
-              const SizedBox(width: 8),
-              Expanded(child: TextField(controller: yCtrl[r.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Y', isDense: true, border: OutlineInputBorder()))),
-            ])),
-          Align(alignment: Alignment.centerRight, child: ElevatedButton(onPressed: _apply, child: const Text('Apply'))),
-          const SizedBox(height: 16),
-          const Text('현재 로봇 위치', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ...robots.map((r) => Text('${r.id}: X=${r.currentX.toStringAsFixed(2)} m, Y=${r.currentY.toStringAsFixed(2)} m')),
-          const SizedBox(height: 10),
-          const Text('※ 나중에 WebSocket 실시간 연동으로 교체 예정', style: TextStyle(fontSize: 12, color: Colors.grey)),
-        ]),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 지도
+            AspectRatio(
+              aspectRatio: 1,
+              child: LayoutBuilder(builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final h = constraints.maxHeight;
+                return Container(
+                  decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
+                  child: Stack(children: [
+                    Positioned.fill(child: GridOverlay(maxX: maxX, maxY: maxY)),
+                    for (final r in _robots) _marker(r, w, h),
+                  ]),
+                );
+              }),
+            ),
+            const SizedBox(height: 20),
+            const Text('로봇 상태', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            if (_robots.isEmpty)
+              const Center(child: CircularProgressIndicator())
+            else
+              for (final r in _robots) _statusTile(r),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _statusTile(RobotData r) {
+    final isStopped = r.status == RobotStatus.stopped;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(children: [
+        // 로봇 색상 인디케이터
+        Container(
+          width: 14, height: 14,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: r.color),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(width: 30, child: Text(r.id, style: const TextStyle(fontWeight: FontWeight.w600))),
+        const SizedBox(width: 8),
+        // 좌표
+        SizedBox(
+          width: 160,
+          child: Text(
+            'X: ${r.currentX.toStringAsFixed(2)}  Y: ${r.currentY.toStringAsFixed(2)}',
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // 상태 뱃지
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: isStopped ? Colors.red : Colors.green,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            isStopped ? 'STOPPED' : 'MOVING',
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const Spacer(),
+        // Stop 버튼
+        ElevatedButton(
+          onPressed: isStopped ? null : () => _service.sendStop(r.id),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.grey.shade300,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+          child: const Text('Stop'),
+        ),
+      ]),
+    );
+  }
+
   Widget _marker(RobotData r, double w, double h) {
+    const dotSize = 24.0;
+    const labelHeight = 14.0;
+    const spacing = 2.0;
+    const totalHeight = dotSize + spacing + labelHeight;
+    final isStopped = r.status == RobotStatus.stopped;
+
     return Positioned(
-      left: (r.currentX / maxX) * w - 12,
-      top: (1 - r.currentY / maxY) * h - 12,
+      left: (r.currentX / maxX) * w - dotSize / 2,
+      top: (1 - r.currentY / maxY) * h - totalHeight / 2,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        RobotDot(color: r.color),
-        const SizedBox(height: 2),
-        Text(r.id, style: const TextStyle(fontSize: 10)),
-      ]));
+        Stack(alignment: Alignment.center, children: [
+          RobotDot(color: isStopped ? Colors.grey : r.color),
+          if (isStopped) const Icon(Icons.stop, color: Colors.white, size: 14),
+        ]),
+        const SizedBox(height: spacing),
+        Text(r.id, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+      ]),
+    );
   }
 }
