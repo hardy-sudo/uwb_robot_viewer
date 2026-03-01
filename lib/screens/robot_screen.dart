@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/robot_data.dart';
+// import '../services/dahua_robot_service.dart'; // 실서버 연동 시 활성화
 import '../services/mock_robot_service.dart';
 import '../services/robot_service.dart';
 import '../widgets/robot_dot.dart';
@@ -23,8 +24,15 @@ class _RobotScreenState extends State<RobotScreen> {
   @override
   void initState() {
     super.initState();
-    // TODO: 실제 WebSocket 준비되면 WebSocketRobotService()로 교체
+    // Mock 서비스 (개발/테스트용)
     _service = MockRobotService();
+    // Dahua 실서버 연동 시 아래로 교체:
+    // _service = DahuaRobotService(
+    //   baseUrl: 'http://192.168.1.100:7000',
+    //   areaId: 1,
+    //   mapWidthMm: 200000,   // 실제 맵 너비(mm)
+    //   mapHeightMm: 200000,  // 실제 맵 높이(mm)
+    // );
     _sub = _service.stream.listen((robots) {
       setState(() => _robots = robots);
     });
