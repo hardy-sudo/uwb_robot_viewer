@@ -3,6 +3,7 @@ import '../constants.dart';
 import '../models/app_context.dart';
 import 'login_screen.dart';
 import 'robot_map_router.dart';
+import 'setup/setup_screen.dart';
 
 class ContextSelectScreen extends StatefulWidget {
   const ContextSelectScreen({super.key});
@@ -36,7 +37,16 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
       appBar: AppBar(
         backgroundColor: hammerYellow, foregroundColor: Colors.black, elevation: 0,
         title: const Text('Select Context'),
-        actions: [TextButton(onPressed: _logout, child: const Text('Logout')), const SizedBox(width: 8)],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Setup',
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SetupScreen())),
+          ),
+          TextButton(onPressed: _logout, child: const Text('Logout')),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Stack(children: [
         Positioned.fill(child: Image.asset('assets/hammer_industry.png', fit: BoxFit.contain)),

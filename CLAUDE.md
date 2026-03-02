@@ -88,6 +88,37 @@ _service = DahuaRobotService(
 
 인트라넷 환경에서는 WSSE 인증이 기본 비활성이므로 단순 HTTP POST로 사용 가능.
 
+### Dahua `state` 문자열 → 앱 상태 매핑
+
+| Dahua `state` | `RobotStatus` | `DeviceState` |
+|---------------|--------------|--------------|
+| `InTask`, `InUpgrading` | `moving` | `normal` |
+| `Idle`, `InCharging` | `stopped` | `normal` |
+| `Fault` | `stopped` | `fault` |
+| `Offline` | `stopped` | `offline` |
+
+응답 성공 조건: `body['code'] == 1000`.
+
+### 로봇 마커 상태 색상 우선순위
+
+`robot_screen.dart`의 `_marker()`에서 여러 상태가 동시에 존재할 때 아래 우선순위로 dotColor / overlayIcon을 결정한다:
+
+1. `stoppedBySafety` → 빨강 + ⚠ 아이콘 + 빨강 링
+2. `DeviceState.fault` → 노랑 + ⚠ 아이콘 + 노랑 링
+3. `DeviceState.offline` → 회색 + wifi_off 아이콘 + 회색 링
+4. `RobotStatus.stopped` → 연회색 + stop 아이콘
+5. 정상 → `r.color` (할당된 로봇 색상)
+
+### UwbSafetyService 공개 API
+
+- `stream` — safety state 반영된 `List<RobotData>` 스트림 (RobotScreen이 구독)
+- `latestMinDistances` — `Map<robotId, double>` 로봇별 최신 최소 UWB 거리 (UI 표시용)
+- `log` — `List<SafetyLogEntry>` 이벤트 로그 (불변 뷰)
+
+`SafetyLogEntry` / `SafetyAction` 타입은 `uwb_safety_service.dart`에 정의됨 (`robot_data.dart` 아님).
+
+수동 재가동 감지: 로봇이 `stoppedBySafety` 상태에서 `stopped → moving`으로 전환되면 `safetyState`를 자동으로 `safe`로 복원 (운영자가 직접 재가동한 경우 대응).
+
 ## 신규 현장/층 추가 체크리스트
 
 1. `context_select_screen.dart`의 `regions` / `sites` / `floors` 리스트에 값 추가
