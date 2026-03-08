@@ -1,4 +1,5 @@
-enum TagGroup { unassigned, human, robot }
+/// 개별 Tag의 단순 분류 (TagGroup 클래스와 구분하기 위해 TagCategory로 명명)
+enum TagCategory { unassigned, human, robot }
 
 class AnchorData {
   String id;
@@ -16,9 +17,9 @@ class AnchorData {
 
 class TagData {
   final String id;
-  TagGroup group;
+  TagCategory group;
 
-  TagData({required this.id, this.group = TagGroup.unassigned});
+  TagData({required this.id, this.group = TagCategory.unassigned});
 }
 
 class RobotMappingEntry {
@@ -34,6 +35,12 @@ class SetupConfig {
   String panId;
   String fmsBaseUrl;
   int areaId;
+
+  // Safety Distance 설정 (TASK 1)
+  double thresholdStopM;   // 정지 거리 (m), 기본 3.0
+  double thresholdResumeM; // 재개 거리 (m), 기본 3.1
+  int cooldownMs;          // Pause 난사 방지 (ms), 기본 1000
+
   final List<AnchorData> anchors;
   final List<TagData> tags;
   final List<RobotMappingEntry> robotMappings;
@@ -44,6 +51,9 @@ class SetupConfig {
     this.panId = '',
     this.fmsBaseUrl = 'http://192.168.1.100:7000',
     this.areaId = 1,
+    this.thresholdStopM = 3.0,
+    this.thresholdResumeM = 3.1,
+    this.cooldownMs = 1000,
     List<AnchorData>? anchors,
     List<TagData>? tags,
     List<RobotMappingEntry>? robotMappings,

@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:math';
 import '../models/robot_data.dart';
+import '../models/setup_config.dart';
 import '../models/uwb_distance_event.dart';
 import 'robot_service.dart';
+import 'setup_service.dart';
+import 'tag_group_service.dart';
 
 // ── 로그 ─────────────────────────────────────────────────────────────────────
 
@@ -37,27 +40,22 @@ class SafetyLogEntry {
 ///     조건: minDist > threshold_resume  &&  safetyState==STOPPED_BY_SAFETY
 ///     동작: controlDevice(controlWay=1) — 재가동
 ///
-/// 중복 호출 방지:
-///   - STOPPED_BY_SAFETY 상태에서는 추가 Pause 호출 없음
-///   - SAFE 상태에서는 추가 Resume 호출 없음
-///   - cooldown 기간 내 동일 명령 재호출 방지
+/// Threshold는 SetupService.instance.config에서 실시간 조회 (TASK 1).
+/// TagGroupService가 제공되면 Relation 기반 threshold 사용 (TASK 2).
 class UwbSafetyService {
   final RobotService robotService;
   final Stream<UwbDistanceEvent> uwbStream;
-
-  /// robotTagId → robot_id 매핑 (예: {'TAG_R1': 'R1'})
   final Map<String, String> robotTagToIdMap;
 
-  final double thresholdStop;   // 정지 트리거 거리 (m)
-  final double thresholdResume; // 재가동 트리거 거리 (m)
-  final Duration cooldown;      // Pause/Resume 중복 호출 방지 간격
+  /// null이면 글로벌 threshold 사용 (하위 호환)
+  final TagGroupService? tagGroupService;
 
   // ── 내부 상태 ──────────────────────────────────────────────────────────────
 
   /// robotId → SafetyState
   final _safetyStates = <String, SafetyState>{};
 
-  /// robotId → { humanTagId → 최신 거리(m) }  (다중 작업자 대응)
+  /// robotId → { humanTagId → 최신 거리(m) }
   final _distances = <String, Map<String, double>>{};
 
   /// robotId → 최소 거리 캐시 (UI 표시용)
@@ -66,7 +64,7 @@ class UwbSafetyService {
   /// robotId → 최근 Safety 명령 발행 시각 (cooldown)
   final _lastActionTime = <String, DateTime>{};
 
-  /// robotId → 최신 RobotStatus (로봇 서비스 스트림에서 수신)
+  /// robotId → 최신 RobotStatus
   final _robotStatuses = <String, RobotStatus>{};
 
   final _log = <SafetyLogEntry>[];
@@ -76,18 +74,61 @@ class UwbSafetyService {
   StreamSubscription<List<RobotData>>? _robotSub;
   StreamSubscription<UwbDistanceEvent>? _uwbSub;
 
+  // ── 생성자 (하위 호환 유지) ──────────────────────────────────────────────────
+
   UwbSafetyService({
     required this.robotService,
     required this.uwbStream,
     required this.robotTagToIdMap,
-    this.thresholdStop = 3.0,
-    this.thresholdResume = 3.1,
-    this.cooldown = const Duration(milliseconds: 500),
+    this.tagGroupService,
+    double thresholdStop = 3.0,
+    double thresholdResume = 3.1,
+    Duration cooldown = const Duration(milliseconds: 500),
   }) {
     assert(thresholdStop <= thresholdResume,
         'threshold_stop($thresholdStop) must be <= threshold_resume($thresholdResume)');
+    // 생성자 파라미터로 SetupConfig 초기값 설정
+    final c = SetupService.instance.config;
+    c.thresholdStopM = thresholdStop;
+    c.thresholdResumeM = thresholdResume;
+    c.cooldownMs = cooldown.inMilliseconds;
+
     _robotSub = robotService.stream.listen(_onRobotUpdate);
     _uwbSub = uwbStream.listen(_onDistanceEvent);
+  }
+
+  // ── Config 기반 Threshold 게터 (TASK 1) ───────────────────────────────────
+
+  double get _thresholdStop => SetupService.instance.config.thresholdStopM;
+  double get _thresholdResume => SetupService.instance.config.thresholdResumeM;
+  Duration get _cooldown =>
+      Duration(milliseconds: SetupService.instance.config.cooldownMs);
+
+  /// Safety 설정을 실시간 업데이트 (SafetySettingsTab에서 호출)
+  void updateConfig(SetupConfig config) {
+    assert(config.thresholdStopM < config.thresholdResumeM);
+    final c = SetupService.instance.config;
+    c.thresholdStopM = config.thresholdStopM;
+    c.thresholdResumeM = config.thresholdResumeM;
+    c.cooldownMs = config.cooldownMs;
+  }
+
+  // ── Relation 기반 Threshold 결정 (TASK 2) ────────────────────────────────
+
+  double _stopThresholdFor(String humanTagId, String robotTagId) {
+    if (tagGroupService != null) {
+      final rel = tagGroupService!.getActiveRelation(humanTagId, robotTagId);
+      if (rel != null) return rel.thresholdStopM;
+    }
+    return _thresholdStop;
+  }
+
+  double _resumeThresholdFor(String humanTagId, String robotTagId) {
+    if (tagGroupService != null) {
+      final rel = tagGroupService!.getActiveRelation(humanTagId, robotTagId);
+      if (rel != null) return rel.thresholdResumeM;
+    }
+    return _thresholdResume;
   }
 
   // ── 스트림 핸들러 ──────────────────────────────────────────────────────────
@@ -114,20 +155,34 @@ class UwbSafetyService {
     final robotId = robotTagToIdMap[event.robotTagId];
     if (robotId == null) return;
 
-    // 해당 로봇에 대해 작업자별 거리 갱신 후 최솟값 계산
-    _distances.putIfAbsent(robotId, () => {})[event.humanTagId] = event.distanceM;
+    // TASK 2: TagGroupService가 있으면 Relation이 없는 쌍은 무시
+    if (tagGroupService != null) {
+      final rel =
+          tagGroupService!.getActiveRelation(event.humanTagId, event.robotTagId);
+      if (rel == null) return;
+    }
+
+    _distances.putIfAbsent(robotId, () => {})[event.humanTagId] =
+        event.distanceM;
     final minDist = _distances[robotId]!.values.reduce(min);
     _minDistances[robotId] = minDist;
 
     final safetyState = _safetyStates[robotId] ?? SafetyState.safe;
     final robotStatus = _robotStatuses[robotId] ?? RobotStatus.moving;
 
+    final stopThresh = _stopThresholdFor(event.humanTagId, event.robotTagId);
+    final resumeThresh =
+        _resumeThresholdFor(event.humanTagId, event.robotTagId);
+
+    // TASK 3: Zone 체크 (UWB 좌표 수신 확인 전까지 비활성)
+    // TODO: if (_isInSafetyOffZone(robotId)) return;
+
     if (safetyState == SafetyState.safe &&
         robotStatus == RobotStatus.moving &&
-        minDist < thresholdStop) {
+        minDist < stopThresh) {
       _triggerPause(robotId, event, minDist);
     } else if (safetyState == SafetyState.stoppedBySafety &&
-               minDist > thresholdResume) {
+        minDist > resumeThresh) {
       _triggerResume(robotId, event, minDist);
     }
   }
@@ -175,7 +230,7 @@ class UwbSafetyService {
   bool _isCooldownActive(String robotId) {
     final last = _lastActionTime[robotId];
     if (last == null) return false;
-    return DateTime.now().difference(last) < cooldown;
+    return DateTime.now().difference(last) < _cooldown;
   }
 
   void _applySafetyStateToRobots(String robotId, SafetyState state) {
@@ -187,7 +242,7 @@ class UwbSafetyService {
 
   // ── 공개 API ──────────────────────────────────────────────────────────────
 
-  /// 로봇별 safety state 가 반영된 로봇 목록 스트림
+  /// 로봇별 safety state가 반영된 로봇 목록 스트림
   Stream<List<RobotData>> get stream => _controller.stream;
 
   /// 로봇별 최소 UWB 거리 (UI 표시용). key = robot_id

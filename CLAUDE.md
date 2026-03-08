@@ -21,7 +21,7 @@ flutter build web                  # Web 빌드
 ### 화면 흐름
 ```
 main.dart → LoginScreen
-              └─ (인증 성공) → ContextSelectScreen
+              └─ (인증 성공) → ContextSelectScreen ─── (⚙ 설정 아이콘) → SetupScreen
                                   └─ (Region/Site/Floor 선택) → RobotMapRouterScreen
                                                                      └─ _resolveMap() → RobotScreen
 ```
@@ -40,6 +40,14 @@ RobotService (abstract)
 MockUwbService                — UWB 거리 시뮬레이터 (200ms, 코사인 파형)
 UwbSafetyService              — Safety 상태 머신 (RobotService + UWB Stream 조합)
 ```
+
+`RobotService` 인터페이스 구현 계약:
+- `Stream<List<RobotData>> get stream` — 주기적으로 로봇 목록 방출
+- `void sendStop(String robotId)` — 즉시 정지 명령 (controlWay=0, stopType=1)
+- `void sendResume(String robotId)` — 재가동 명령 (controlWay=1)
+- `void dispose()` — 타이머/스트림 정리
+
+`RobotScreen` 해제 순서: `_sub.cancel()` → `_safetyService.dispose()` → `_uwbService.dispose()` → `_service.dispose()`
 
 `UwbSafetyService`는 `RobotService`를 직접 소유하지 않고 참조한다. `RobotScreen`은 `UwbSafetyService.stream`을 구독하며, 이 스트림이 safety state가 반영된 `List<RobotData>`를 방출한다.
 
@@ -118,6 +126,55 @@ _service = DahuaRobotService(
 `SafetyLogEntry` / `SafetyAction` 타입은 `uwb_safety_service.dart`에 정의됨 (`robot_data.dart` 아님).
 
 수동 재가동 감지: 로봇이 `stoppedBySafety` 상태에서 `stopped → moving`으로 전환되면 `safetyState`를 자동으로 `safe`로 복원 (운영자가 직접 재가동한 경우 대응).
+
+### Admin Setup Screen (`lib/screens/setup/`)
+
+`ContextSelectScreen` 우상단 ⚙ 아이콘 → `SetupScreen(initialTab: N)` (8탭 구성).
+`ContextSelectScreen` 하단 **[신규 센터 등록]** 버튼 → `SetupScreen(initialTab: 0)`.
+
+| 탭 | 파일 | 역할 |
+|----|------|------|
+| 센터/로케이션 | `center_location_tab.dart` | centerName, locationName, PAN ID 입력 |
+| Anchor | `anchor_tab.dart` | UWB 앵커 등록 + 맵 캔버스 배치 (비율 좌표 0.0~1.0) |
+| Tag | `tag_tab.dart` | UWB 태그 등록 + TagCategory 분류 + TagGroup 관리 |
+| 로봇 매핑 | `robot_mapping_tab.dart` | FMS URL/areaId 설정 → 로봇 ID 조회 → 태그 매핑 |
+| Connection Test | `connection_test_tab.dart` | Heartbeat(5회×1Hz) + Safety 기능 테스트(Pause→3s→Resume) |
+| Safety | `safety_settings_tab.dart` | thresholdStopM/ResumeM/cooldownMs Slider 설정 |
+| Relation | `relation_tab.dart` | 그룹 간 Safety Relation CRUD + 개별 Threshold |
+| Map & Zone | `map_zone_tab.dart` | 맵 이미지(URL) + Safety Zone 폴리곤 드로잉/관리 |
+
+**`SetupService` 싱글턴** (`SetupService.instance`): 모든 탭이 동일한 `SetupConfig` 인스턴스를 공유/변경한다.
+**주의**: 현재 설정은 in-memory 상태만 유지되며, 앱 재시작 시 초기화된다 (퍼시스턴스 미구현).
+
+`SetupConfig` 필드: `centerName`, `locationName`, `panId`, `fmsBaseUrl`, `areaId`, `thresholdStopM`(기본 3.0), `thresholdResumeM`(기본 3.1), `cooldownMs`(기본 1000), `anchors`, `tags`, `robotMappings`.
+
+### Tag 분류 체계
+
+- **`TagCategory`** (enum, `setup_config.dart`): 개별 Tag의 단순 분류 — `unassigned / human / robot`
+- **`TagGroup`** (class, `models/tag_group.dart`): 명명된 그룹 (다수의 Tag + FMS 정보 등 메타데이터 포함)
+- **`TagGroupType`** (enum): `robot / human / forklift`
+- **`TagGroupService`** 싱글턴: 그룹 CRUD + Relation CRUD + `getActiveRelation(tagIdA, tagIdB)`
+
+### TagGroup Relation 기반 Safety (TASK 2)
+
+`UwbSafetyService` 생성자에 `tagGroupService` (optional) 전달 시 Relation 기반 threshold 사용:
+- Relation 없는 쌍은 무시
+- Relation별 `thresholdStopM` / `thresholdResumeM` 개별 적용
+- `tagGroupService == null`이면 `SetupConfig` 글로벌 threshold 사용 (하위 호환)
+
+### Map & Safety Zone (TASK 3 — Zone Safety 로직 스텁)
+
+- `MapZoneService` 싱글턴: `MapConfig?` + `List<SafetyZone>` in-memory 관리
+- `SafetyZone.polygon`: 0.0~1.0 정규화 캔버스 좌표 (실좌표 변환은 `CoordinateConverter` 사용)
+- `ZonePainter`: ON=반투명 녹색(`#3300FF00`), OFF=반투명 빨강(`#33FF0000`)
+- `CoordinateConverter`: 픽셀↔실좌표 변환 + Ray Casting Point-in-Polygon
+- `UwbSafetyService`의 Zone 체크 로직은 `// TODO:` 스텁 상태 (UWB 좌표 수신 확인 후 완성)
+
+## 신규 서비스 구현 시 체크리스트 (TASK 2+3 추가분)
+
+새 `RobotService` 구현체 추가 시:
+- `TagGroupService`에 로봇 그룹 등록 + `robotTagToIdMap` 연결
+- `UwbSafetyService(tagGroupService: TagGroupService.instance)` 전달
 
 ## 신규 현장/층 추가 체크리스트
 

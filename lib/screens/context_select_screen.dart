@@ -51,11 +51,12 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
       body: Stack(children: [
         Positioned.fill(child: Image.asset('assets/hammer_industry.png', fit: BoxFit.contain)),
         Positioned.fill(child: Container(color: hammerYellow.withOpacity(0.88))),
-        Center(child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Padding(padding: const EdgeInsets.all(16), child: Card(elevation: 10,
-            child: Padding(padding: const EdgeInsets.all(16),
-              child: Stepper(
+        Column(children: [
+          Expanded(child: Center(child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(padding: const EdgeInsets.all(16), child: Card(elevation: 10,
+              child: Padding(padding: const EdgeInsets.all(16),
+                child: Stepper(
                 currentStep: _step,
                 onStepTapped: (i) => setState(() => _step = i),
                 controlsBuilder: (context, details) => Row(children: [
@@ -87,7 +88,23 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
               ),
             ),
           )),
-        )),
+        ))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add_business),
+                label: const Text('신규 센터 등록'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const SetupScreen(initialTab: 0)),
+                ),
+              ),
+            ),
+          ),
+        ]),
       ]),
     );
   }

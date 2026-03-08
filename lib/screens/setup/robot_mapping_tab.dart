@@ -22,7 +22,7 @@ class _RobotMappingTabState extends State<RobotMappingTab>
   SetupConfig get _cfg => SetupService.instance.config;
   List<RobotMappingEntry> get _mappings => _cfg.robotMappings;
   List<TagData> get _robotTags =>
-      _cfg.tags.where((t) => t.group == TagGroup.robot).toList();
+      _cfg.tags.where((t) => t.group == TagCategory.robot).toList();
 
   @override
   void initState() {
