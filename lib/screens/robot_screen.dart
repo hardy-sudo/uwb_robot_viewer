@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/robot_data.dart';
+import '../models/uwb_distance_event.dart';
 import '../services/mock_robot_service.dart';
 import '../services/mock_uwb_service.dart';
+import '../services/real_uwb_service.dart';
 import '../services/robot_service.dart';
+import '../services/setup_service.dart';
 import '../services/uwb_safety_service.dart';
 import '../widgets/robot_dot.dart';
 import '../widgets/grid_overlay.dart';
@@ -19,9 +22,14 @@ class _RobotScreenState extends State<RobotScreen> {
   final double maxY = 6.0;
 
   late final RobotService _service;
-  late final MockUwbService _uwbService;
-  late final UwbSafetyService _safetyService;
-  late final StreamSubscription<List<RobotData>> _sub;
+
+  // ── UWB 서비스 (Mock ↔ Real 전환 가능) ─────────────────────────────────────
+  bool _useMockUwb = true;
+  MockUwbService? _mockUwb;
+  RealUwbService? _realUwb;
+  UwbSafetyService? _safetyService;
+  StreamSubscription<List<RobotData>>? _sub;
+
   List<RobotData> _robots = [];
 
   @override
@@ -31,39 +39,152 @@ class _RobotScreenState extends State<RobotScreen> {
     // Dahua 실서버 연동 시 아래로 교체:
     // import '../services/dahua_robot_service.dart';
     // _service = DahuaRobotService(
-    //   baseUrl: 'http://192.168.1.100:7000',
+    //   baseUrl: 'http://192.168.0.100:7000',
     //   mapWidthMm: 200000,
     //   mapHeightMm: 200000,
     // );
 
-    _uwbService = MockUwbService();
+    // ── UWB 소스 선택 ────────────────────────────────────────────────────────
+    // 방법 A) 시뮬레이션 (기본 — 하드웨어 없이 Safety 로직 확인)
+    _initUwb(mock: true);
+    //
+    // 방법 B) 실 하드웨어 고정 (포트 이름 직접 지정)
+    // _initUwb(mock: false, portName: '/dev/tty.usbmodem1101');
+    //
+    // 방법 C) 런타임 전환 — 화면 하단 UWB 배지를 탭하여 포트 선택
+    // (A 또는 B로 시작한 뒤 사용자가 언제든지 전환 가능)
+  }
+
+  // ── UWB 서비스 초기화 ────────────────────────────────────────────────────────
+
+  void _initUwb({required bool mock, String? portName}) {
+    _teardownUwb();
+
+    final Stream<UwbDistanceEvent> uwbStream;
+    final Map<String, String> tagMap;
+
+    if (mock) {
+      _mockUwb = MockUwbService();
+      uwbStream = _mockUwb!.stream;
+      tagMap = MockUwbService.robotTagToIdMap;
+    } else {
+      _realUwb = RealUwbService(portName: portName!);
+      uwbStream = _realUwb!.stream;
+      tagMap = _buildRealTagMap();
+    }
 
     _safetyService = UwbSafetyService(
       robotService: _service,
-      uwbStream: _uwbService.stream,
-      robotTagToIdMap: MockUwbService.robotTagToIdMap,
+      uwbStream: uwbStream,
+      robotTagToIdMap: tagMap,
       thresholdStop: 3.0,
       thresholdResume: 3.1,
       cooldown: const Duration(milliseconds: 500),
     );
 
-    _sub = _safetyService.stream.listen((robots) {
-      setState(() => _robots = robots);
+    _sub = _safetyService!.stream.listen((robots) {
+      if (mounted) setState(() => _robots = robots);
     });
+
+    _useMockUwb = mock;
+  }
+
+  void _teardownUwb() {
+    _sub?.cancel();
+    _safetyService?.dispose();
+    _mockUwb?.dispose();
+    _realUwb?.dispose();
+    _sub = null;
+    _safetyService = null;
+    _mockUwb = null;
+    _realUwb = null;
+  }
+
+  /// SetupService.config.robotMappings 에서 tagId → robotId 맵 생성
+  Map<String, String> _buildRealTagMap() {
+    return {
+      for (final m in SetupService.instance.config.robotMappings)
+        if (m.tagId.isNotEmpty) m.tagId: m.robotId,
+    };
   }
 
   @override
   void dispose() {
-    _sub.cancel();
-    _safetyService.dispose();
-    _uwbService.dispose();
+    _sub?.cancel();
+    _safetyService?.dispose();
+    _mockUwb?.dispose();
+    _realUwb?.dispose();
     _service.dispose();
     super.dispose();
   }
 
+  // ── UWB 소스 선택 다이얼로그 ─────────────────────────────────────────────────
+
+  void _showUwbSourceDialog() {
+    final ports = RealUwbService.availablePorts;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('UWB 소스 선택'),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.science),
+                title: const Text('Mock (시뮬레이션)'),
+                subtitle: const Text('R1↔W1 코사인 파형, R2↔W2 안전 거리'),
+                selected: _useMockUwb,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _initUwb(mock: true));
+                },
+              ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: Text(
+                  '실 하드웨어 (UART 115200)',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
+              if (ports.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    '연결된 시리얼 포트 없음\n(USB 케이블 연결 후 재시도)',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
+              else
+                for (final port in ports)
+                  ListTile(
+                    leading: const Icon(Icons.usb),
+                    title: Text(port),
+                    selected: !_useMockUwb,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() => _initUwb(mock: false, portName: port));
+                    },
+                  ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final recentLog = _safetyService.log.reversed.take(5).toList();
+    final recentLog = _safetyService?.log.reversed.take(5).toList() ?? [];
 
     return SingleChildScrollView(
       child: Padding(
@@ -92,6 +213,15 @@ class _RobotScreenState extends State<RobotScreen> {
             // ── UWB Safety 상태 헤더 ────────────────────────────────────────
             _safetyStatusHeader(),
 
+            const SizedBox(height: 8),
+
+            // ── UWB 소스 배지 ────────────────────────────────────────────────
+            Row(
+              children: [
+                _uwbSourceBadge(),
+              ],
+            ),
+
             const SizedBox(height: 12),
 
             // ── 로봇 상태 목록 ───────────────────────────────────────────────
@@ -112,6 +242,34 @@ class _RobotScreenState extends State<RobotScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  // ── UWB 소스 배지 ─────────────────────────────────────────────────────────
+
+  Widget _uwbSourceBadge() {
+    final isMock = _useMockUwb;
+    final color = isMock ? Colors.blue : Colors.green;
+    return GestureDetector(
+      onTap: _showUwbSourceDialog,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withAlpha(20),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(isMock ? Icons.science : Icons.usb, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            isMock ? 'Mock' : _realUwb?.portName ?? 'Real UART',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.swap_horiz, size: 13, color: color),
+        ]),
       ),
     );
   }
@@ -159,7 +317,7 @@ class _RobotScreenState extends State<RobotScreen> {
     final isSafetyStopped = r.safetyState == SafetyState.stoppedBySafety;
     final isFault = r.deviceState == DeviceState.fault;
     final isOffline = r.deviceState == DeviceState.offline;
-    final uwbDist = _safetyService.latestMinDistances[r.id];
+    final uwbDist = _safetyService?.latestMinDistances[r.id];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

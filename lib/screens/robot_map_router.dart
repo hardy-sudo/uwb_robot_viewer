@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/app_context.dart';
+import '../services/setup_service.dart';
 import 'context_select_screen.dart';
 import 'robot_screen.dart';
 
@@ -28,6 +29,11 @@ class RobotMapRouterScreen extends StatelessWidget {
 
   Widget _resolveMap(AppContext ctx) {
     if (ctx.region == 'KR' && ctx.site == 'Office' && ctx.floor == '2F') {
+      return const RobotScreen();
+    }
+    final isRegistered = SetupService.instance.centers
+        .any((c) => c.centerName == ctx.site && c.locationName == ctx.floor);
+    if (isRegistered) {
       return const RobotScreen();
     }
     return Center(

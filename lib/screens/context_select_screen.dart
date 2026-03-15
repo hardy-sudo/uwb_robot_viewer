@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../constants.dart';
 import '../models/app_context.dart';
+import '../models/setup_config.dart';
+import '../services/setup_service.dart';
 import 'login_screen.dart';
 import 'robot_map_router.dart';
 import 'setup/setup_screen.dart';
@@ -30,6 +32,41 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
       MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)));
   }
 
+  void _enterRegistered(SetupConfig center) {
+    final ctx = AppContext(
+      region: '등록',
+      site: center.centerName,
+      floor: center.locationName,
+    );
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)));
+  }
+
+  Widget _buildRegisteredCenters(List<SetupConfig> centers) {
+    return Card(
+      elevation: 10,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('등록된 센터',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            for (final c in centers)
+              ListTile(
+                leading: const Icon(Icons.business),
+                title: Text(c.centerName),
+                subtitle: c.locationName.isNotEmpty ? Text(c.locationName) : null,
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => _enterRegistered(c),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -52,43 +89,61 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
         Positioned.fill(child: Image.asset('assets/hammer_industry.png', fit: BoxFit.contain)),
         Positioned.fill(child: Container(color: hammerYellow.withOpacity(0.88))),
         Column(children: [
-          Expanded(child: Center(child: ConstrainedBox(
+        Expanded(child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Center(child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
-            child: Padding(padding: const EdgeInsets.all(16), child: Card(elevation: 10,
-              child: Padding(padding: const EdgeInsets.all(16),
-                child: Stepper(
-                currentStep: _step,
-                onStepTapped: (i) => setState(() => _step = i),
-                controlsBuilder: (context, details) => Row(children: [
-                  ElevatedButton(
-                    onPressed: _step == 2 ? (_canEnter ? _enter : null) : details.onStepContinue,
-                    child: Text(_step == 2 ? 'Enter' : 'Next')),
-                  const SizedBox(width: 8),
-                  TextButton(onPressed: _step == 0 ? null : details.onStepCancel, child: const Text('Back')),
-                ]),
-                onStepContinue: () => setState(() => _step = (_step + 1).clamp(0, 2)),
-                onStepCancel: () => setState(() => _step = (_step - 1).clamp(0, 2)),
-                steps: [
-                  Step(title: const Text('Region'), subtitle: Text(_region ?? 'Select KR / US'),
-                    isActive: _step >= 0,
-                    content: Wrap(spacing: 8, runSpacing: 8,
-                      children: regions.map((r) => ChoiceChip(label: Text(r), selected: _region == r,
-                        onSelected: (_) => setState(() { _region = r; _site = null; _floor = null; }))).toList())),
-                  Step(title: const Text('Site / Location'), subtitle: Text(_site ?? 'Select Office / ICN'),
-                    isActive: _step >= 1,
-                    content: Wrap(spacing: 8, runSpacing: 8,
-                      children: sites.map((s) => ChoiceChip(label: Text(s), selected: _site == s,
-                        onSelected: _region == null ? null : (_) => setState(() { _site = s; _floor = null; }))).toList())),
-                  Step(title: const Text('Floor'), subtitle: Text(_floor ?? 'Select 1F~4F'),
-                    isActive: _step >= 2,
-                    content: Wrap(spacing: 8, runSpacing: 8,
-                      children: floors.map((f) => ChoiceChip(label: Text(f), selected: _floor == f,
-                        onSelected: (_region == null || _site == null) ? null : (_) => setState(() => _floor = f))).toList())),
-                ],
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── 등록된 센터 목록 ──────────────────────────────────────────
+                Builder(builder: (_) {
+                  final centers = SetupService.instance.centers;
+                  if (centers.isEmpty) return const SizedBox.shrink();
+                  return Column(children: [
+                    _buildRegisteredCenters(centers),
+                    const SizedBox(height: 16),
+                  ]);
+                }),
+
+                // ── Region / Site / Floor Stepper ────────────────────────────
+                Card(elevation: 10,
+                  child: Padding(padding: const EdgeInsets.all(16),
+                    child: Stepper(
+                    currentStep: _step,
+                    onStepTapped: (i) => setState(() => _step = i),
+                    controlsBuilder: (context, details) => Row(children: [
+                      ElevatedButton(
+                        onPressed: _step == 2 ? (_canEnter ? _enter : null) : details.onStepContinue,
+                        child: Text(_step == 2 ? 'Enter' : 'Next')),
+                      const SizedBox(width: 8),
+                      TextButton(onPressed: _step == 0 ? null : details.onStepCancel, child: const Text('Back')),
+                    ]),
+                    onStepContinue: () => setState(() => _step = (_step + 1).clamp(0, 2)),
+                    onStepCancel: () => setState(() => _step = (_step - 1).clamp(0, 2)),
+                    steps: [
+                      Step(title: const Text('Region'), subtitle: Text(_region ?? 'Select KR / US'),
+                        isActive: _step >= 0,
+                        content: Wrap(spacing: 8, runSpacing: 8,
+                          children: regions.map((r) => ChoiceChip(label: Text(r), selected: _region == r,
+                            onSelected: (_) => setState(() { _region = r; _site = null; _floor = null; }))).toList())),
+                      Step(title: const Text('Site / Location'), subtitle: Text(_site ?? 'Select Office / ICN'),
+                        isActive: _step >= 1,
+                        content: Wrap(spacing: 8, runSpacing: 8,
+                          children: sites.map((s) => ChoiceChip(label: Text(s), selected: _site == s,
+                            onSelected: _region == null ? null : (_) => setState(() { _site = s; _floor = null; }))).toList())),
+                      Step(title: const Text('Floor'), subtitle: Text(_floor ?? 'Select 1F~4F'),
+                        isActive: _step >= 2,
+                        content: Wrap(spacing: 8, runSpacing: 8,
+                          children: floors.map((f) => ChoiceChip(label: Text(f), selected: _floor == f,
+                            onSelected: (_region == null || _site == null) ? null : (_) => setState(() => _floor = f))).toList())),
+                    ],
+                  ),
+                )),
+              ],
             ),
           )),
-        ))),
+        )),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(

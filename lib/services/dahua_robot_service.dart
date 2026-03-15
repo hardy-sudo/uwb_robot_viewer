@@ -37,7 +37,7 @@ class DahuaRobotService implements RobotService {
   ];
 
   DahuaRobotService({
-    required this.baseUrl,
+    this.baseUrl = 'http://192.168.0.100:7000',
     this.areaId = 1,
     this.pollInterval = const Duration(milliseconds: 500),
     this.mapWidthMm = 200000,   // 기본값 200m 맵 너비

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+앱 이름: **HAMMER** (`main.dart` title, 브랜드 색상 `hammerYellow = #F1C342` in `constants.dart`)
+
 ## Commands
 
 ```bash
@@ -129,8 +131,8 @@ _service = DahuaRobotService(
 
 ### Admin Setup Screen (`lib/screens/setup/`)
 
-`ContextSelectScreen` 우상단 ⚙ 아이콘 → `SetupScreen(initialTab: N)` (8탭 구성).
-`ContextSelectScreen` 하단 **[신규 센터 등록]** 버튼 → `SetupScreen(initialTab: 0)`.
+`ContextSelectScreen` 우상단 ⚙ 아이콘 → `SetupScreen()` (탭 0부터, 8탭 구성).
+`ContextSelectScreen` 하단 **[신규 센터 등록]** 버튼 → `SetupScreen(initialTab: 0)` (동일하게 탭 0).
 
 | 탭 | 파일 | 역할 |
 |----|------|------|
@@ -143,10 +145,14 @@ _service = DahuaRobotService(
 | Relation | `relation_tab.dart` | 그룹 간 Safety Relation CRUD + 개별 Threshold |
 | Map & Zone | `map_zone_tab.dart` | 맵 이미지(URL) + Safety Zone 폴리곤 드로잉/관리 |
 
-**`SetupService` 싱글턴** (`SetupService.instance`): 모든 탭이 동일한 `SetupConfig` 인스턴스를 공유/변경한다.
+**싱글턴 서비스 목록**: `SetupService.instance` / `TagGroupService.instance` / `MapZoneService.instance`
+
+**`SetupService` 싱글턴** (`SetupService.instance`): 모든 탭이 동일한 `SetupConfig` 인스턴스를 공유/변경한다. 설정 저장 외에 FMS HTTP 호출도 담당한다: `loadRobotIds()` (로봇 ID 조회), `heartbeatTest()` (5회×1Hz Stream), `safetyFunctionTest(robotId)` (Pause→3s→Resume Stream) — connection_test_tab.dart가 사용.
 **주의**: 현재 설정은 in-memory 상태만 유지되며, 앱 재시작 시 초기화된다 (퍼시스턴스 미구현).
 
-`SetupConfig` 필드: `centerName`, `locationName`, `panId`, `fmsBaseUrl`, `areaId`, `thresholdStopM`(기본 3.0), `thresholdResumeM`(기본 3.1), `cooldownMs`(기본 1000), `anchors`, `tags`, `robotMappings`.
+`SetupConfig` 필드: `centerName`, `locationName`, `panId`, `fmsBaseUrl`, `areaId`, `thresholdStopM`(기본 3.0), `thresholdResumeM`(기본 3.1), `cooldownMs`(클래스 기본 1000ms, RobotScreen에서 500ms로 초기화), `anchors`, `tags`, `robotMappings`.
+
+**cooldown 주의**: `SetupConfig` 클래스 기본값은 1000ms이지만 `UwbSafetyService` 생성자(`cooldown` 파라미터)가 `SetupConfig`를 덮어쓴다. `RobotScreen`에서 500ms로 설정하므로 실제 동작은 500ms.
 
 ### Tag 분류 체계
 
@@ -154,6 +160,10 @@ _service = DahuaRobotService(
 - **`TagGroup`** (class, `models/tag_group.dart`): 명명된 그룹 (다수의 Tag + FMS 정보 등 메타데이터 포함)
 - **`TagGroupType`** (enum): `robot / human / forklift`
 - **`TagGroupService`** 싱글턴: 그룹 CRUD + Relation CRUD + `getActiveRelation(tagIdA, tagIdB)`
+
+### MockUwbService 정적 필드
+
+`MockUwbService.robotTagToIdMap` (static const): `{'TAG_R1': 'R1', 'TAG_R2': 'R2'}`. `UwbSafetyService` 생성자에 전달하며, 실 서버 전환 시 실제 태그 ID 맵핑으로 교체 필요.
 
 ### TagGroup Relation 기반 Safety (TASK 2)
 
@@ -178,6 +188,13 @@ _service = DahuaRobotService(
 
 ## 신규 현장/층 추가 체크리스트
 
-1. `context_select_screen.dart`의 `regions` / `sites` / `floors` 리스트에 값 추가
+현재 하드코딩 값 (`context_select_screen.dart`):
+- `regions`: `['KR', 'US']`
+- `sites`: `['Office', 'ICN']`
+- `floors`: `['1F', '2F', '3F', '4F']`
+- 활성 조합: `KR / Office / 2F` → `RobotScreen` (나머지 전부 "No map configured")
+
+추가 절차:
+1. `context_select_screen.dart`의 `regions` / `sites` / `floors` 리스트에 값 추가 (새 값인 경우)
 2. `robot_map_router.dart`의 `_resolveMap()`에 분기 추가
 3. 해당 조합에 맞는 화면 위젯 생성 (또는 `RobotScreen` 재사용 + 파라미터 전달)

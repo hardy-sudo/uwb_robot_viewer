@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/setup_config.dart';
 import '../../services/setup_service.dart';
 
 class CenterLocationTab extends StatefulWidget {
@@ -34,6 +35,9 @@ class _CenterLocationTabState extends State<CenterLocationTab>
     super.dispose();
   }
 
+  bool get _canRegister =>
+      _centerCtrl.text.trim().isNotEmpty && _locationCtrl.text.trim().isNotEmpty;
+
   void _save() {
     final c = SetupService.instance.config;
     c.centerName = _centerCtrl.text.trim();
@@ -42,6 +46,25 @@ class _CenterLocationTabState extends State<CenterLocationTab>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('저장되었습니다.'), duration: Duration(seconds: 1)),
     );
+  }
+
+  void _register() {
+    final centerName = _centerCtrl.text.trim();
+    final locationName = _locationCtrl.text.trim();
+    final panId = _panIdCtrl.text.trim();
+
+    final c = SetupService.instance.config;
+    c.centerName = centerName;
+    c.locationName = locationName;
+    c.panId = panId;
+
+    SetupService.instance.addCenter(SetupConfig(
+      centerName: centerName,
+      locationName: locationName,
+      panId: panId,
+    ));
+
+    Navigator.pop(context);
   }
 
   @override
@@ -69,6 +92,7 @@ class _CenterLocationTabState extends State<CenterLocationTab>
                 helperText: '1 Platform = 1 Center',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() {}),
             ),
 
             const SizedBox(height: 20),
@@ -86,6 +110,7 @@ class _CenterLocationTabState extends State<CenterLocationTab>
                 helperText: '1 Center = N Location',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -102,6 +127,16 @@ class _CenterLocationTabState extends State<CenterLocationTab>
             ElevatedButton(
               onPressed: _save,
               child: const Text('저장'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check_circle),
+              label: const Text('센터 등록 완료'),
+              onPressed: _canRegister ? _register : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
             ),
           ],
         ),

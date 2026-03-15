@@ -22,6 +22,18 @@ class SetupService {
 
   final config = SetupConfig();
 
+  final List<SetupConfig> _centers = [];
+
+  /// 등록된 센터 목록 (불변 뷰)
+  List<SetupConfig> get centers => List.unmodifiable(_centers);
+
+  /// 센터 등록 (동일 centerName이 있으면 덮어씀)
+  void addCenter(SetupConfig config) {
+    if (config.centerName.isEmpty) return;
+    _centers.removeWhere((c) => c.centerName == config.centerName);
+    _centers.add(config);
+  }
+
   /// FMS에서 로봇 ID 목록 조회
   Future<List<String>> loadRobotIds() async {
     final response = await http

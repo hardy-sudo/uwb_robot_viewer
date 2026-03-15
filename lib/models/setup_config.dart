@@ -49,7 +49,7 @@ class SetupConfig {
     this.centerName = '',
     this.locationName = '',
     this.panId = '',
-    this.fmsBaseUrl = 'http://192.168.1.100:7000',
+    this.fmsBaseUrl = 'http://192.168.0.100:7000',
     this.areaId = 1,
     this.thresholdStopM = 3.0,
     this.thresholdResumeM = 3.1,
