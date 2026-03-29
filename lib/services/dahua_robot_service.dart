@@ -37,7 +37,7 @@ class DahuaRobotService implements RobotService {
   ];
 
   DahuaRobotService({
-    this.baseUrl = 'http://192.168.0.100:7000',
+    this.baseUrl = 'http://10.0.4.94:8080',
     this.areaId = 1,
     this.pollInterval = const Duration(milliseconds: 500),
     this.mapWidthMm = 200000,   // 기본값 200m 맵 너비
@@ -84,6 +84,9 @@ class DahuaRobotService implements RobotService {
         final xMm = (posRec[0] as num).toDouble();
         final yMm = (posRec[1] as num).toDouble();
         final state = (item['state'] as String?) ?? 'Idle';
+        final battery = (item['battery'] as num?)?.toInt();
+        final pauseFlag = (item['pauseFlag'] as num?)?.toInt() == 1;
+        final devicePosition = item['devicePosition'] as String?;
 
         final x = (xMm / mapWidthMm * maxX).clamp(0.0, maxX);
         final y = (yMm / mapHeightMm * maxY).clamp(0.0, maxY);
@@ -96,6 +99,9 @@ class DahuaRobotService implements RobotService {
           r.currentY = y;
           r.status = status;
           r.deviceState = deviceState;
+          r.battery = battery;
+          r.pauseFlag = pauseFlag;
+          r.devicePosition = devicePosition;
         } else {
           final color = _palette[colorIdx % _palette.length];
           _robotMap[deviceName] = RobotData(
@@ -105,6 +111,9 @@ class DahuaRobotService implements RobotService {
             currentY: y,
             status: status,
             deviceState: deviceState,
+            battery: battery,
+            pauseFlag: pauseFlag,
+            devicePosition: devicePosition,
           );
           colorIdx++;
         }
@@ -155,6 +164,25 @@ class DahuaRobotService implements RobotService {
       _controller.add(List.from(_robotMap.values));
     }
     _controlDevice(robotId, controlWay: 1);
+  }
+
+  @override
+  void sendCharge(String robotId) {
+    _goCharging(robotId);
+  }
+
+  Future<void> _goCharging(String deviceNumber) async {
+    try {
+      await http
+          .post(
+            Uri.parse('$baseUrl/ics/out/gocharging'),
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: jsonEncode({'deviceNumber': deviceNumber}),
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // 명령 전송 실패 시 무시
+    }
   }
 
   Future<void> _controlDevice(

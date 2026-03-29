@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/robot_data.dart';
 import '../models/uwb_distance_event.dart';
-import '../services/mock_robot_service.dart';
+import '../services/dahua_robot_service.dart';
 import '../services/mock_uwb_service.dart';
 import '../services/real_uwb_service.dart';
 import '../services/robot_service.dart';
@@ -35,14 +35,14 @@ class _RobotScreenState extends State<RobotScreen> {
   @override
   void initState() {
     super.initState();
-    _service = MockRobotService();
-    // Dahua 실서버 연동 시 아래로 교체:
-    // import '../services/dahua_robot_service.dart';
-    // _service = DahuaRobotService(
-    //   baseUrl: 'http://192.168.0.100:7000',
-    //   mapWidthMm: 200000,
-    //   mapHeightMm: 200000,
-    // );
+    _service = DahuaRobotService(
+      baseUrl: 'http://10.0.4.94:8080',  // 프록시 서버 (→ 10.0.4.104:7000)
+      mapWidthMm: 200000,
+      mapHeightMm: 200000,
+    );
+    // Mock 사용 시 아래로 교체:
+    // import '../services/mock_robot_service.dart';
+    // _service = MockRobotService();
 
     // ── UWB 소스 선택 ────────────────────────────────────────────────────────
     // 방법 A) 시뮬레이션 (기본 — 하드웨어 없이 Safety 로직 확인)
@@ -321,83 +321,142 @@ class _RobotScreenState extends State<RobotScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(children: [
-        // 색상 인디케이터
-        Container(
-          width: 14, height: 14,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: r.color),
-        ),
-        const SizedBox(width: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            // 색상 인디케이터
+            Container(
+              width: 14, height: 14,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: r.color),
+            ),
+            const SizedBox(width: 8),
 
-        // 로봇 ID
-        SizedBox(width: 30, child: Text(r.id, style: const TextStyle(fontWeight: FontWeight.w600))),
-        const SizedBox(width: 8),
+            // 로봇 ID
+            SizedBox(width: 30, child: Text(r.id, style: const TextStyle(fontWeight: FontWeight.w600))),
+            const SizedBox(width: 8),
 
-        // 좌표
-        SizedBox(
-          width: 160,
-          child: Text(
-            'X: ${r.currentX.toStringAsFixed(2)}  Y: ${r.currentY.toStringAsFixed(2)}',
-            style: const TextStyle(fontFamily: 'monospace'),
-          ),
-        ),
-        const SizedBox(width: 8),
-
-        // 이동 상태 뱃지
-        _badge(
-          isStopped ? 'STOPPED' : 'MOVING',
-          isStopped ? Colors.red : Colors.green,
-        ),
-        const SizedBox(width: 4),
-
-        // Safety 상태 뱃지
-        if (isSafetyStopped)
-          _badge('SAFETY STOP', Colors.red, icon: Icons.warning_rounded)
-        else
-          _badge('SAFE', Colors.teal, icon: Icons.shield),
-        const SizedBox(width: 4),
-
-        // 기기 장치 상태 뱃지
-        if (isFault)
-          _badge('FAULT', Colors.yellow.shade700, icon: Icons.error_outline)
-        else if (isOffline)
-          _badge('OFFLINE', Colors.grey, icon: Icons.wifi_off),
-        const SizedBox(width: 8),
-
-        // UWB 거리
-        if (uwbDist != null)
-          SizedBox(
-            width: 72,
-            child: Text(
-              'UWB ${uwbDist.toStringAsFixed(2)}m',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: uwbDist < 3.0
-                    ? Colors.red
-                    : uwbDist < 3.5
-                        ? Colors.orange
-                        : Colors.grey,
+            // 좌표
+            SizedBox(
+              width: 160,
+              child: Text(
+                'X: ${r.currentX.toStringAsFixed(2)}  Y: ${r.currentY.toStringAsFixed(2)}',
+                style: const TextStyle(fontFamily: 'monospace'),
               ),
             ),
-          )
-        else
-          const SizedBox(width: 72),
+            const SizedBox(width: 8),
 
-        const Spacer(),
+            // 이동 상태 뱃지
+            _badge(
+              isStopped ? 'STOPPED' : 'MOVING',
+              isStopped ? Colors.red : Colors.green,
+            ),
+            const SizedBox(width: 4),
 
-        // 수동 Stop 버튼
-        ElevatedButton(
-          onPressed: isStopped ? null : () => _service.sendStop(r.id),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.grey.shade300,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          ),
-          child: const Text('Stop'),
-        ),
-      ]),
+            // Safety 상태 뱃지
+            if (isSafetyStopped)
+              _badge('SAFETY STOP', Colors.red, icon: Icons.warning_rounded)
+            else
+              _badge('SAFE', Colors.teal, icon: Icons.shield),
+            const SizedBox(width: 4),
+
+            // 기기 장치 상태 뱃지
+            if (isFault)
+              _badge('FAULT', Colors.yellow.shade700, icon: Icons.error_outline)
+            else if (isOffline)
+              _badge('OFFLINE', Colors.grey, icon: Icons.wifi_off),
+            const SizedBox(width: 4),
+
+            // pauseFlag 뱃지
+            if (r.pauseFlag)
+              _badge('PAUSE', Colors.deepOrange, icon: Icons.pause_circle_outline),
+            const SizedBox(width: 8),
+
+            // UWB 거리
+            if (uwbDist != null)
+              SizedBox(
+                width: 72,
+                child: Text(
+                  'UWB ${uwbDist.toStringAsFixed(2)}m',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: uwbDist < 3.0
+                        ? Colors.red
+                        : uwbDist < 3.5
+                            ? Colors.orange
+                            : Colors.grey,
+                  ),
+                ),
+              )
+            else
+              const SizedBox(width: 72),
+
+            const Spacer(),
+
+            // 수동 Stop 버튼
+            ElevatedButton(
+              onPressed: isStopped ? null : () => _service.sendStop(r.id),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              child: const Text('Stop'),
+            ),
+            const SizedBox(width: 4),
+
+            // Charge 버튼
+            ElevatedButton(
+              onPressed: isOffline ? null : () => _service.sendCharge(r.id),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              child: const Text('Charge'),
+            ),
+          ]),
+
+          // 배터리 / 위치 정보 (있을 때만 표시)
+          if (r.battery != null || r.devicePosition != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, top: 2),
+              child: Row(children: [
+                if (r.battery != null) ...[
+                  Icon(
+                    r.battery! > 50
+                        ? Icons.battery_full
+                        : r.battery! > 20
+                            ? Icons.battery_3_bar
+                            : Icons.battery_alert,
+                    size: 13,
+                    color: r.battery! > 20 ? Colors.grey : Colors.red,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${r.battery}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: r.battery! > 20 ? Colors.grey.shade600 : Colors.red,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                if (r.devicePosition != null && r.devicePosition!.isNotEmpty) ...[
+                  Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
+                  const SizedBox(width: 2),
+                  Text(
+                    r.devicePosition!,
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
+              ]),
+            ),
+        ],
+      ),
     );
   }
 

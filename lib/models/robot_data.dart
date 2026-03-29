@@ -25,6 +25,9 @@ class RobotData {
     this.status = RobotStatus.moving,
     this.safetyState = SafetyState.safe,
     this.deviceState = DeviceState.normal,
+    this.battery,
+    this.pauseFlag = false,
+    this.devicePosition,
   });
 
   final String id;
@@ -38,4 +41,13 @@ class RobotData {
 
   /// 기기 장치 상태 — DahuaRobotService 가 갱신 (Mock 에서는 항상 normal)
   DeviceState deviceState;
+
+  /// 배터리 잔량 (%) — DahuaRobotService 가 갱신
+  int? battery;
+
+  /// 서버 일시정지 플래그 (pauseFlag==1 이면 true) — DahuaRobotService 가 갱신
+  bool pauseFlag;
+
+  /// 현재 위치 QR 레이블 — DahuaRobotService 가 갱신
+  String? devicePosition;
 }

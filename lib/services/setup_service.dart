@@ -27,11 +27,32 @@ class SetupService {
   /// 등록된 센터 목록 (불변 뷰)
   List<SetupConfig> get centers => List.unmodifiable(_centers);
 
-  /// 센터 등록 (동일 centerName이 있으면 덮어씀)
+  /// 센터 등록 (동일 centerName이 있으면 덮어씀, 참조 분리를 위해 copy 저장)
   void addCenter(SetupConfig config) {
     if (config.centerName.isEmpty) return;
     _centers.removeWhere((c) => c.centerName == config.centerName);
-    _centers.add(config);
+    _centers.add(config.copy());
+  }
+
+  /// 선택한 센터를 활성 config로 복사 (SetupScreen 편집용)
+  void setActiveCenter(SetupConfig center) {
+    config.centerName = center.centerName;
+    config.locationName = center.locationName;
+    config.panId = center.panId;
+    config.fmsBaseUrl = center.fmsBaseUrl;
+    config.areaId = center.areaId;
+    config.thresholdStopM = center.thresholdStopM;
+    config.thresholdResumeM = center.thresholdResumeM;
+    config.cooldownMs = center.cooldownMs;
+    config.anchors
+      ..clear()
+      ..addAll(center.anchors);
+    config.tags
+      ..clear()
+      ..addAll(center.tags);
+    config.robotMappings
+      ..clear()
+      ..addAll(center.robotMappings);
   }
 
   /// FMS에서 로봇 ID 목록 조회

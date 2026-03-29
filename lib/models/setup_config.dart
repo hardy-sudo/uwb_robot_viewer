@@ -49,7 +49,7 @@ class SetupConfig {
     this.centerName = '',
     this.locationName = '',
     this.panId = '',
-    this.fmsBaseUrl = 'http://192.168.0.100:7000',
+    this.fmsBaseUrl = 'http://10.0.4.94:8080',
     this.areaId = 1,
     this.thresholdStopM = 3.0,
     this.thresholdResumeM = 3.1,
@@ -60,4 +60,26 @@ class SetupConfig {
   })  : anchors = anchors ?? [],
         tags = tags ?? [],
         robotMappings = robotMappings ?? [];
+
+  /// 전체 필드를 복사한 새 인스턴스 반환 (저장 시 참조 분리용)
+  SetupConfig copy() => SetupConfig(
+        centerName: centerName,
+        locationName: locationName,
+        panId: panId,
+        fmsBaseUrl: fmsBaseUrl,
+        areaId: areaId,
+        thresholdStopM: thresholdStopM,
+        thresholdResumeM: thresholdResumeM,
+        cooldownMs: cooldownMs,
+        anchors: anchors.map((a) => AnchorData(
+              id: a.id,
+              mapXRatio: a.mapXRatio,
+              mapYRatio: a.mapYRatio,
+              placed: a.placed,
+            )).toList(),
+        tags: tags.map((t) => TagData(id: t.id, group: t.group)).toList(),
+        robotMappings: robotMappings
+            .map((m) => RobotMappingEntry(robotId: m.robotId, tagId: m.tagId))
+            .toList(),
+      );
 }

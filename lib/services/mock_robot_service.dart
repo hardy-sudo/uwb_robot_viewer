@@ -47,6 +47,14 @@ class MockRobotService implements RobotService {
   }
 
   @override
+  void sendCharge(String robotId) {
+    // Mock: 충전 명령 — 상태만 stopped으로 변경 (실제 이동 없음)
+    final robot = _robots.firstWhere((r) => r.id == robotId);
+    robot.status = RobotStatus.stopped;
+    _controller.add(List.from(_robots));
+  }
+
+  @override
   void dispose() {
     _timer.cancel();
     _controller.close();

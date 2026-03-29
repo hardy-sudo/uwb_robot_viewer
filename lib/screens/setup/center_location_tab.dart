@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../models/setup_config.dart';
 import '../../services/setup_service.dart';
 
 class CenterLocationTab extends StatefulWidget {
@@ -58,11 +57,7 @@ class _CenterLocationTabState extends State<CenterLocationTab>
     c.locationName = locationName;
     c.panId = panId;
 
-    SetupService.instance.addCenter(SetupConfig(
-      centerName: centerName,
-      locationName: locationName,
-      panId: panId,
-    ));
+    SetupService.instance.addCenter(SetupService.instance.config);
 
     Navigator.pop(context);
   }

@@ -10,5 +10,8 @@ abstract class RobotService {
   /// 특정 로봇에 재가동 명령 전송 (Safety: controlWay=1)
   void sendResume(String robotId);
 
+  /// 특정 로봇을 충전소로 이동 (POST /ics/out/gocharging)
+  void sendCharge(String robotId);
+
   void dispose();
 }
