@@ -35,24 +35,17 @@ class _RobotScreenState extends State<RobotScreen> {
   @override
   void initState() {
     super.initState();
+    final cfg = SetupService.instance.config;
+
     _service = DahuaRobotService(
-      baseUrl: 'http://10.0.4.94:8080',  // 프록시 서버 (→ 10.0.4.104:7000)
+      baseUrl: cfg.fmsBaseUrl,
+      areaId: cfg.areaId,
       mapWidthMm: 200000,
       mapHeightMm: 200000,
     );
-    // Mock 사용 시 아래로 교체:
-    // import '../services/mock_robot_service.dart';
-    // _service = MockRobotService();
 
     // ── UWB 소스 선택 ────────────────────────────────────────────────────────
-    // 방법 A) 시뮬레이션 (기본 — 하드웨어 없이 Safety 로직 확인)
     _initUwb(mock: true);
-    //
-    // 방법 B) 실 하드웨어 고정 (포트 이름 직접 지정)
-    // _initUwb(mock: false, portName: '/dev/tty.usbmodem1101');
-    //
-    // 방법 C) 런타임 전환 — 화면 하단 UWB 배지를 탭하여 포트 선택
-    // (A 또는 B로 시작한 뒤 사용자가 언제든지 전환 가능)
   }
 
   // ── UWB 서비스 초기화 ────────────────────────────────────────────────────────
@@ -73,13 +66,14 @@ class _RobotScreenState extends State<RobotScreen> {
       tagMap = _buildRealTagMap();
     }
 
+    final cfg = SetupService.instance.config;
     _safetyService = UwbSafetyService(
       robotService: _service,
       uwbStream: uwbStream,
       robotTagToIdMap: tagMap,
-      thresholdStop: 3.0,
-      thresholdResume: 3.1,
-      cooldown: const Duration(milliseconds: 500),
+      thresholdStop: cfg.thresholdStopM,
+      thresholdResume: cfg.thresholdResumeM,
+      cooldown: Duration(milliseconds: cfg.cooldownMs),
     );
 
     _sub = _safetyService!.stream.listen((robots) {
@@ -278,6 +272,7 @@ class _RobotScreenState extends State<RobotScreen> {
 
   Widget _safetyStatusHeader() {
     final anyStopped = _robots.any((r) => r.safetyState == SafetyState.stoppedBySafety);
+    final cfg = SetupService.instance.config;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -303,7 +298,7 @@ class _RobotScreenState extends State<RobotScreen> {
         ),
         const SizedBox(width: 8),
         Text(
-          '  ▸ stop < 3.0m  |  resume > 3.1m',
+          '  ▸ stop < ${cfg.thresholdStopM}m  |  resume > ${cfg.thresholdResumeM}m',
           style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
         ),
       ]),

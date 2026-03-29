@@ -42,6 +42,91 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
       MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)));
   }
 
+  void _showCenterOptions(SetupConfig center) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.business, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(center.centerName,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    if (center.locationName.isNotEmpty)
+                      Text(center.locationName,
+                          style: const TextStyle(
+                              fontSize: 13, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            const Divider(),
+            if (center.fmsBaseUrl.isNotEmpty)
+              _infoRow(Icons.link, 'FMS URL', center.fmsBaseUrl),
+            if (center.panId.isNotEmpty)
+              _infoRow(Icons.router, 'PAN ID', center.panId),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.settings),
+                  label: const Text('설정 편집'),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    SetupService.instance.setActiveCenter(center);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SetupScreen(initialTab: 0)));
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.map),
+                  label: const Text('맵 바로 가기'),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _enterRegistered(center);
+                  },
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Icon(icon, size: 16, color: Colors.grey),
+        const SizedBox(width: 8),
+        Text('$label: ', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Expanded(
+          child: Text(value,
+              style: const TextStyle(fontSize: 12),
+              overflow: TextOverflow.ellipsis),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildRegisteredCenters(List<SetupConfig> centers) {
     return Card(
       elevation: 10,
@@ -59,7 +144,7 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
                 title: Text(c.centerName),
                 subtitle: c.locationName.isNotEmpty ? Text(c.locationName) : null,
                 trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () => _enterRegistered(c),
+                onTap: () => _showCenterOptions(c),
               ),
           ],
         ),
