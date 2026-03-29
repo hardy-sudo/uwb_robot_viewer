@@ -44,6 +44,7 @@ class MockUwbService {
       robotTagId: 'TAG_R1',
       distanceM: d1,
       timestamp: DateTime.now(),
+      anchorId: 'ANCHOR_1',
     ));
 
     // ── R2 ↔ W2: 항상 안전 거리 ──────────────────────────────────────────
@@ -52,6 +53,7 @@ class MockUwbService {
       robotTagId: 'TAG_R2',
       distanceM: 5.5,
       timestamp: DateTime.now(),
+      anchorId: 'ANCHOR_2',
     ));
   }
 

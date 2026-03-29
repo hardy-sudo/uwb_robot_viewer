@@ -3,6 +3,7 @@ import 'dart:math';
 import '../models/robot_data.dart';
 import '../models/setup_config.dart';
 import '../models/uwb_distance_event.dart';
+import 'map_zone_service.dart';
 import 'robot_service.dart';
 import 'setup_service.dart';
 import 'tag_group_service.dart';
@@ -170,12 +171,18 @@ class UwbSafetyService {
     final safetyState = _safetyStates[robotId] ?? SafetyState.safe;
     final robotStatus = _robotStatuses[robotId] ?? RobotStatus.moving;
 
-    final stopThresh = _stopThresholdFor(event.humanTagId, event.robotTagId);
-    final resumeThresh =
-        _resumeThresholdFor(event.humanTagId, event.robotTagId);
+    var stopThresh = _stopThresholdFor(event.humanTagId, event.robotTagId);
+    var resumeThresh = _resumeThresholdFor(event.humanTagId, event.robotTagId);
 
-    // TASK 3: Zone 체크 (UWB 좌표 수신 확인 전까지 비활성)
-    // TODO: if (_isInSafetyOffZone(robotId)) return;
+    // TASK 3: anchorId가 있으면 Zone Safety 설정 적용
+    if (event.anchorId != null) {
+      final zone = MapZoneService.instance.getZoneByAnchorId(event.anchorId!);
+      if (zone != null) {
+        if (!zone.safetyEnabled) return; // Zone Safety 비활성 → 이벤트 무시
+        if (zone.customThresholdStopM != null) stopThresh = zone.customThresholdStopM!;
+        if (zone.customThresholdResumeM != null) resumeThresh = zone.customThresholdResumeM!;
+      }
+    }
 
     if (safetyState == SafetyState.safe &&
         robotStatus == RobotStatus.moving &&

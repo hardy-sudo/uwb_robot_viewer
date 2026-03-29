@@ -24,4 +24,12 @@ class MapZoneService {
     }
     return null;
   }
+
+  /// anchorId가 속한 Zone 반환. 여러 Zone에 동일 Anchor가 등록된 경우 첫 번째 반환.
+  SafetyZone? getZoneByAnchorId(String anchorId) {
+    for (final z in zones) {
+      if (z.anchorIds.contains(anchorId)) return z;
+    }
+    return null;
+  }
 }

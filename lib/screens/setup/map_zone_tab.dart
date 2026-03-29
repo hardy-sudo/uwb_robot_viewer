@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/map_config.dart';
 import '../../models/safety_zone.dart';
 import '../../services/map_zone_service.dart';
+import '../../services/setup_service.dart';
 import '../../widgets/zone_painter.dart';
 
 class MapZoneTab extends StatefulWidget {
@@ -75,11 +76,12 @@ class _MapZoneTabState extends State<MapZoneTab>
     showDialog(
       context: context,
       builder: (ctx) => _ZoneNameDialog(
-        onSave: (name, safetyOn) {
+        onSave: (name, safetyOn, anchorIds) {
           final zone = SafetyZone(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             name: name,
             polygon: polygon,
+            anchorIds: anchorIds,
             safetyEnabled: safetyOn,
             zoneColor: safetyOn ? Colors.green : Colors.red,
           );
@@ -87,6 +89,27 @@ class _MapZoneTabState extends State<MapZoneTab>
             _svc.addZone(zone);
             _drawingMode = false;
             _draftPolygon = [];
+          });
+        },
+      ),
+    );
+  }
+
+  void _showZoneEditDialog(SafetyZone zone) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _ZoneNameDialog(
+        initialName: zone.name,
+        initialSafetyOn: zone.safetyEnabled,
+        initialAnchorIds: List.from(zone.anchorIds),
+        onSave: (name, safetyOn, anchorIds) {
+          setState(() {
+            zone.name = name;
+            zone.safetyEnabled = safetyOn;
+            zone.anchorIds
+              ..clear()
+              ..addAll(anchorIds);
+            zone.zoneColor = safetyOn ? Colors.green : Colors.red;
           });
         },
       ),
@@ -286,7 +309,8 @@ class _MapZoneTabState extends State<MapZoneTab>
             ),
             title: Text(zone.name, style: const TextStyle(fontSize: 13)),
             subtitle: Text(
-              '${zone.polygon.length}개 꼭짓점',
+              '꼭짓점 ${zone.polygon.length}개'
+              '${zone.anchorIds.isNotEmpty ? ' · Anchor ${zone.anchorIds.length}개' : ''}',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: Row(
@@ -301,6 +325,11 @@ class _MapZoneTabState extends State<MapZoneTab>
                     });
                   },
                 ),
+                GestureDetector(
+                  onTap: () => _showZoneEditDialog(zone),
+                  child: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                ),
+                const SizedBox(width: 4),
                 GestureDetector(
                   onTap: () => setState(() => _svc.removeZone(zone.id)),
                   child: const Icon(Icons.close, size: 16, color: Colors.grey),
@@ -317,17 +346,34 @@ class _MapZoneTabState extends State<MapZoneTab>
 // ── Zone 이름 입력 다이얼로그 (StatefulWidget으로 분리해 controller 생명주기 관리) ──
 
 class _ZoneNameDialog extends StatefulWidget {
-  final void Function(String name, bool safetyOn) onSave;
+  final void Function(String name, bool safetyOn, List<String> anchorIds) onSave;
+  final String initialName;
+  final bool initialSafetyOn;
+  final List<String> initialAnchorIds;
 
-  const _ZoneNameDialog({required this.onSave});
+  const _ZoneNameDialog({
+    required this.onSave,
+    this.initialName = '',
+    this.initialSafetyOn = true,
+    this.initialAnchorIds = const [],
+  });
 
   @override
   State<_ZoneNameDialog> createState() => _ZoneNameDialogState();
 }
 
 class _ZoneNameDialogState extends State<_ZoneNameDialog> {
-  final _nameCtrl = TextEditingController();
-  bool _safetyOn = true;
+  late final TextEditingController _nameCtrl;
+  late bool _safetyOn;
+  late final Set<String> _selectedAnchorIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.initialName);
+    _safetyOn = widget.initialSafetyOn;
+    _selectedAnchorIds = Set.from(widget.initialAnchorIds);
+  }
 
   @override
   void dispose() {
@@ -337,10 +383,12 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final availableAnchors = SetupService.instance.config.anchors;
+
     return AlertDialog(
       title: const Text('Zone 정보 입력'),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 400),
+        constraints: const BoxConstraints(maxHeight: 480),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -373,6 +421,29 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
                     fontSize: 12,
                     color: _safetyOn ? Colors.green : Colors.grey),
               ),
+              const SizedBox(height: 16),
+              const Text('Anchor 할당',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 4),
+              if (availableAnchors.isEmpty)
+                const Text(
+                  'Anchor가 없습니다. Anchor 탭에서 먼저 등록해 주세요.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                )
+              else
+                ...availableAnchors.map((a) => CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(a.id, style: const TextStyle(fontSize: 13)),
+                      value: _selectedAnchorIds.contains(a.id),
+                      onChanged: (checked) => setState(() {
+                        if (checked == true) {
+                          _selectedAnchorIds.add(a.id);
+                        } else {
+                          _selectedAnchorIds.remove(a.id);
+                        }
+                      }),
+                    )),
             ],
           ),
         ),
@@ -386,7 +457,11 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
           onPressed: _nameCtrl.text.trim().isEmpty
               ? null
               : () {
-                  widget.onSave(_nameCtrl.text.trim(), _safetyOn);
+                  widget.onSave(
+                    _nameCtrl.text.trim(),
+                    _safetyOn,
+                    _selectedAnchorIds.toList(),
+                  );
                   Navigator.pop(context);
                 },
           child: const Text('저장'),

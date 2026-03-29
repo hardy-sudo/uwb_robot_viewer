@@ -6,6 +6,7 @@ class UwbDistanceEvent {
     required this.robotTagId,
     required this.distanceM,
     required this.timestamp,
+    this.anchorId,
   });
 
   /// 작업자 태그 ID (예: 'TAG_W1')
@@ -19,8 +20,13 @@ class UwbDistanceEvent {
 
   final DateTime timestamp;
 
+  /// 이 거리를 측정한 UWB Anchor ID (옵셔널). null이면 Anchor 정보 없음 (하위 호환).
+  final String? anchorId;
+
   @override
   String toString() =>
       'UwbDistanceEvent($humanTagId↔$robotTagId '
-      '${distanceM.toStringAsFixed(2)}m @ $timestamp)';
+      '${distanceM.toStringAsFixed(2)}m'
+      '${anchorId != null ? ' via $anchorId' : ''}'
+      ' @ $timestamp)';
 }
