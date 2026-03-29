@@ -40,6 +40,7 @@ RobotService (abstract)
   └── DahuaRobotService       — 실 서버 연동 (Dahua ICS HTTP 폴링)
 
 MockUwbService                — UWB 거리 시뮬레이터 (200ms, 코사인 파형)
+RealUwbService                — Qorvo DW3110 UART 실 하드웨어 연동 (115200 baud)
 UwbSafetyService              — Safety 상태 머신 (RobotService + UWB Stream 조합)
 ```
 
@@ -47,9 +48,10 @@ UwbSafetyService              — Safety 상태 머신 (RobotService + UWB Strea
 - `Stream<List<RobotData>> get stream` — 주기적으로 로봇 목록 방출
 - `void sendStop(String robotId)` — 즉시 정지 명령 (controlWay=0, stopType=1)
 - `void sendResume(String robotId)` — 재가동 명령 (controlWay=1)
+- `void sendCharge(String robotId)` — 충전소 이동 명령 (POST /ics/out/gocharging)
 - `void dispose()` — 타이머/스트림 정리
 
-`RobotScreen` 해제 순서: `_sub.cancel()` → `_safetyService.dispose()` → `_uwbService.dispose()` → `_service.dispose()`
+`RobotScreen` 해제 순서: `_sub.cancel()` → `_safetyService.dispose()` → `_mockUwb?.dispose()` / `_realUwb?.dispose()` → `_service.dispose()`
 
 `UwbSafetyService`는 `RobotService`를 직접 소유하지 않고 참조한다. `RobotScreen`은 `UwbSafetyService.stream`을 구독하며, 이 스트림이 safety state가 반영된 `List<RobotData>`를 방출한다.
 
@@ -75,17 +77,12 @@ Dahua API는 mm 단위 절대 좌표(`devicePostionRec: [x_mm, y_mm]`)를 반환
 
 ### 실서버 전환 방법
 
-`robot_screen.dart`의 `initState()`에 주석 처리된 교체 코드가 있다:
+`robot_screen.dart`의 `initState()`는 이미 `DahuaRobotService`를 사용하며 `SetupService.instance.config`에서 `fmsBaseUrl`/`areaId`를 읽는다. Setup 탭에서 FMS URL을 설정하면 자동으로 반영된다.
 
-```dart
-// import '../services/dahua_robot_service.dart'; 주석 해제 후
-_service = DahuaRobotService(
-  baseUrl: 'http://<RCS_IP>:7000',
-  areaId: 1,
-  mapWidthMm: 200000,
-  mapHeightMm: 200000,
-);
-```
+UWB는 기본 Mock 모드이며, RobotScreen 상단 아이콘으로 Mock ↔ 실 하드웨어 전환 가능:
+- `_initUwb(mock: true)` — MockUwbService 시작
+- `_initUwb(mock: false, portName: '/dev/ttyUSB0')` — RealUwbService 시작
+- `_buildRealTagMap()` — `SetupService.config.robotMappings`에서 `tagId → robotId` 맵 생성
 
 ### Dahua API 핵심 엔드포인트
 
@@ -150,7 +147,9 @@ _service = DahuaRobotService(
 **`SetupService` 싱글턴** (`SetupService.instance`): 모든 탭이 동일한 `SetupConfig` 인스턴스를 공유/변경한다. 설정 저장 외에 FMS HTTP 호출도 담당한다: `loadRobotIds()` (로봇 ID 조회), `heartbeatTest()` (5회×1Hz Stream), `safetyFunctionTest(robotId)` (Pause→3s→Resume Stream) — connection_test_tab.dart가 사용.
 **주의**: 현재 설정은 in-memory 상태만 유지되며, 앱 재시작 시 초기화된다 (퍼시스턴스 미구현).
 
-`SetupConfig` 필드: `centerName`, `locationName`, `panId`, `fmsBaseUrl`, `areaId`, `thresholdStopM`(기본 3.0), `thresholdResumeM`(기본 3.1), `cooldownMs`(클래스 기본 1000ms, RobotScreen에서 500ms로 초기화), `anchors`, `tags`, `robotMappings`.
+`SetupService`는 다중 센터를 지원한다: `addCenter(config)` — `centerName` 중복 시 덮어씀, `setActiveCenter(center)` — 선택한 센터를 활성 config로 복사(SetupScreen 편집용), `centers` — 불변 목록. `ContextSelectScreen`에서 등록된 센터 목록을 표시하며, 각 센터 탭 시 "설정 편집" / "맵 바로 가기" 바텀시트 노출.
+
+`SetupConfig` 필드: `centerName`, `locationName`, `region`(선택, KR/US/EU/CN/JP), `floor`(선택, 텍스트), `panId`, `fmsBaseUrl`(기본 `http://10.0.4.94:8080`), `areaId`, `thresholdStopM`(기본 3.0), `thresholdResumeM`(기본 3.1), `cooldownMs`(클래스 기본 1000ms), `anchors`, `tags`, `robotMappings`.
 
 **cooldown 주의**: `SetupConfig` 클래스 기본값은 1000ms이지만 `UwbSafetyService` 생성자(`cooldown` 파라미터)가 `SetupConfig`를 덮어쓴다. `RobotScreen`에서 500ms로 설정하므로 실제 동작은 500ms.
 
@@ -164,6 +163,17 @@ _service = DahuaRobotService(
 ### MockUwbService 정적 필드
 
 `MockUwbService.robotTagToIdMap` (static const): `{'TAG_R1': 'R1', 'TAG_R2': 'R2'}`. `UwbSafetyService` 생성자에 전달하며, 실 서버 전환 시 실제 태그 ID 맵핑으로 교체 필요.
+
+### RealUwbService (실 하드웨어 UWB)
+
+Qorvo DW3110 / QM33 SDK 하드웨어와 UART(115200 baud, 8N1)로 통신. 3가지 라인 포맷 지원:
+- **SDK Native** (`SESSION_INFO_NTF:`): `[mac_address=0x0000]` + `distance[cm]=235` 파싱
+- **CSV** 커스텀: `TAG_W1,TAG_R1,2.650`
+- **JSON** 커스텀: `{"h":"TAG_W1","r":"TAG_R1","d":2.650}`
+
+`RealUwbService.robotTagToIdMap` (static const): SDK 포맷용 MAC 주소(`'0x0000': 'R1'`) + CSV/JSON용 태그 이름(`'TAG_R1': 'R1'`) 포함. 실 운용 시 `SetupService.config.robotMappings`로 대체됨.
+
+macOS 요구사항: `brew install libserialport` + Entitlements에 `com.apple.security.device.usb = true` 설정 필요. 포트 목록: `RealUwbService.availablePorts`.
 
 ### TagGroup Relation 기반 Safety (TASK 2)
 

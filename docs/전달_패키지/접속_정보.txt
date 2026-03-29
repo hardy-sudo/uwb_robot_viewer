@@ -1,0 +1,50 @@
+====================================================
+  로봇 제어 시스템 접속 정보
+====================================================
+
+[ RCS 서버 ]
+  IP      : 10.0.4.104
+  Port    : 7000
+  Protocol: HTTP
+
+[ Robot ID ]
+  ID      : 0001
+
+----------------------------------------------------
+
+[ 사용 방법 1 ] PC에서 실행파일 사용
+  - RobotControl.exe 실행
+  - 상단 IP / PORT / ROBOT ID 확인 후 사용
+
+----------------------------------------------------
+
+[ 사용 방법 2 ] 스마트폰 웹앱 사용
+  - 아래 PC에서 proxy_server.py 실행 필요
+    python proxy_server.py
+
+  - 실행 PC와 스마트폰이 같은 Wi-Fi(내부망) 연결 필요
+  - 스마트폰 브라우저에서 아래 주소로 접속
+    http://<proxy_server.py 실행 PC의 IP>:8080
+
+  - 웹앱 접속 후 상단 설정값 확인
+    IP      : 10.0.4.104
+    PORT    : 7000
+    ROBOT ID: 0001
+
+----------------------------------------------------
+
+[ API 정보 ]
+  PAUSE   : POST http://10.0.4.104:7000/ics/out/controlDevice
+  RESUME  : POST http://10.0.4.104:7000/ics/out/controlDevice
+  CHARGE  : POST http://10.0.4.104:7000/ics/out/gocharging
+  상태조회 : POST http://10.0.4.104:7000/ics/out/device/list/deviceInfo
+
+----------------------------------------------------
+
+[ 파일 목록 ]
+  RobotControl.exe   - PC 실행파일 (Python 불필요)
+  control_ui.py      - Python 소스 (python control_ui.py)
+  proxy_server.py    - 스마트폰용 프록시 서버 (python proxy_server.py)
+  robot_control.html - 스마트폰 웹앱
+
+====================================================

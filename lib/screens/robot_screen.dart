@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../models/robot_data.dart';
 import '../models/uwb_distance_event.dart';
 import '../services/dahua_robot_service.dart';
@@ -31,6 +33,11 @@ class _RobotScreenState extends State<RobotScreen> {
   StreamSubscription<List<RobotData>>? _sub;
 
   List<RobotData> _robots = [];
+
+  // ── 로봇 컨트롤 패널 상태 ──────────────────────────────────────────────────
+  String? _selectedRobotId;
+  final List<_CommLogEntry> _commLog = [];
+  bool _isSendingCommand = false;
 
   @override
   void initState() {
@@ -104,10 +111,7 @@ class _RobotScreenState extends State<RobotScreen> {
 
   @override
   void dispose() {
-    _sub?.cancel();
-    _safetyService?.dispose();
-    _mockUwb?.dispose();
-    _realUwb?.dispose();
+    _teardownUwb();
     _service.dispose();
     super.dispose();
   }
@@ -186,18 +190,27 @@ class _RobotScreenState extends State<RobotScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── 지도 ────────────────────────────────────────────────────────
+            // ── 지도 + 로봇 컨트롤 ────────────────────────────────────────
             AspectRatio(
               aspectRatio: 1,
               child: LayoutBuilder(builder: (context, constraints) {
                 final w = constraints.maxWidth;
                 final h = constraints.maxHeight;
-                return Container(
-                  decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
-                  child: Stack(children: [
-                    Positioned.fill(child: GridOverlay(maxX: maxX, maxY: maxY)),
-                    for (final r in _robots) _marker(r, w, h),
-                  ]),
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedRobotId = null),
+                  child: Container(
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey)),
+                    child: Stack(children: [
+                      Positioned.fill(child: GridOverlay(maxX: maxX, maxY: maxY)),
+                      for (final r in _robots) _marker(r, w, h),
+                      // ── 선택된 로봇 컨트롤 바 (맵 하단 오버레이) ─────────
+                      if (_selectedRobotId != null)
+                        Positioned(
+                          left: 0, right: 0, bottom: 0,
+                          child: _mapControlBar(),
+                        ),
+                    ]),
+                  ),
                 );
               }),
             ),
@@ -215,6 +228,11 @@ class _RobotScreenState extends State<RobotScreen> {
                 _uwbSourceBadge(),
               ],
             ),
+
+            const SizedBox(height: 16),
+
+            // ── 로봇 컨트롤 패널 ─────────────────────────────────────────────
+            _robotControlPanel(),
 
             const SizedBox(height: 12),
 
@@ -238,6 +256,404 @@ class _RobotScreenState extends State<RobotScreen> {
         ),
       ),
     );
+  }
+
+  // ── 로봇 컨트롤 패널 ──────────────────────────────────────────────────────
+
+  Widget _robotControlPanel() {
+    final cfg = SetupService.instance.config;
+    final selectedRobot = _selectedRobotId != null
+        ? _robots.cast<RobotData?>().firstWhere(
+              (r) => r!.id == _selectedRobotId,
+              orElse: () => null,
+            )
+        : null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF21262D)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── 설정 바 ──────────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D1117),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Color(0xFF21262D))),
+            ),
+            child: Row(children: [
+              _cfgLabel('FMS'),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  cfg.fmsBaseUrl.isEmpty ? '(미설정)' : cfg.fmsBaseUrl,
+                  style: const TextStyle(
+                    color: Color(0xFFC9D1D9),
+                    fontFamily: 'Courier New',
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 16),
+              _cfgLabel('ROBOT ID'),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161B22),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF30363D)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedRobotId,
+                    isDense: true,
+                    dropdownColor: const Color(0xFF161B22),
+                    hint: const Text('선택',
+                        style: TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
+                    style: const TextStyle(
+                      color: Color(0xFFC9D1D9),
+                      fontFamily: 'Courier New',
+                      fontSize: 12,
+                    ),
+                    items: _robots
+                        .map((r) => DropdownMenuItem(
+                              value: r.id,
+                              child: Text(r.id),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _selectedRobotId = v),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+
+          // ── 상태 바 ──────────────────────────────────────────────────────
+          if (selectedRobot != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: const BoxDecoration(
+                color: Color(0xFF16213E),
+                border: Border(bottom: BorderSide(color: Color(0xFF21262D))),
+              ),
+              child: Row(children: [
+                _statItem('STATE',
+                    selectedRobot.status == RobotStatus.moving ? 'Moving' : 'Stopped',
+                    selectedRobot.status == RobotStatus.moving
+                        ? const Color(0xFF79C0FF)
+                        : const Color(0xFFF85149)),
+                const SizedBox(width: 14),
+                _statItem('POS',
+                    selectedRobot.devicePosition ?? '—',
+                    const Color(0xFFE3B341)),
+                const SizedBox(width: 14),
+                _statItem('PAUSE',
+                    selectedRobot.pauseFlag ? 'ON' : 'OFF',
+                    selectedRobot.pauseFlag
+                        ? const Color(0xFFF85149)
+                        : const Color(0xFF3FB950)),
+                const SizedBox(width: 14),
+                _statItem('BAT',
+                    selectedRobot.battery != null ? '${selectedRobot.battery}%' : '—',
+                    const Color(0xFF3FB950)),
+                const Spacer(),
+                // 연결 상태 인디케이터
+                Container(
+                  width: 8, height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selectedRobot.deviceState == DeviceState.offline
+                        ? const Color(0xFFF85149)
+                        : const Color(0xFF3FB950),
+                  ),
+                ),
+              ]),
+            ),
+
+          // ── PAUSE / RESUME / CHARGE 버튼 ───────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              Expanded(
+                child: _controlButton(
+                  label: 'PAUSE',
+                  color: const Color(0xFFF85149),
+                  icon: Icons.pause_circle_filled,
+                  enabled: _selectedRobotId != null && !_isSendingCommand,
+                  onPressed: () => _sendControlCommand(0),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _controlButton(
+                  label: 'RESUME',
+                  color: const Color(0xFF238636),
+                  icon: Icons.play_circle_filled,
+                  enabled: _selectedRobotId != null && !_isSendingCommand,
+                  onPressed: () => _sendControlCommand(1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _controlButton(
+                  label: 'CHARGE',
+                  color: const Color(0xFF1F6FEB),
+                  icon: Icons.battery_charging_full,
+                  enabled: _selectedRobotId != null && !_isSendingCommand,
+                  onPressed: _sendChargeCommand,
+                ),
+              ),
+            ]),
+          ),
+
+          // ── 통신 로그 ──────────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: const BoxDecoration(
+              color: Color(0xFF161B22),
+              border: Border(
+                top: BorderSide(color: Color(0xFF21262D)),
+              ),
+            ),
+            child: Row(children: [
+              const Text('통신 로그',
+                  style: TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+              const Spacer(),
+              TextButton(
+                onPressed: () => setState(() => _commLog.clear()),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Clear',
+                    style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 11)),
+              ),
+            ]),
+          ),
+          Container(
+            height: 120,
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D1117),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
+            ),
+            child: _commLog.isEmpty
+                ? const Center(
+                    child: Text('로봇을 선택하고 명령을 보내세요.',
+                        style: TextStyle(color: Color(0xFF484F58), fontSize: 12)))
+                : ListView.builder(
+                    reverse: true,
+                    itemCount: _commLog.length,
+                    itemBuilder: (_, i) {
+                      final entry = _commLog[_commLog.length - 1 - i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: '[${_fmtTs(entry.timestamp)}]  ',
+                              style: const TextStyle(color: Color(0xFF484F58)),
+                            ),
+                            TextSpan(
+                              text: entry.isSuccess ? '✓ ' : '✗ ',
+                              style: TextStyle(
+                                color: entry.isSuccess
+                                    ? const Color(0xFF3FB950)
+                                    : const Color(0xFFF85149),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '${entry.action}  ',
+                              style: TextStyle(
+                                color: _actionColor(entry.action),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(
+                              text: entry.message,
+                              style: const TextStyle(color: Color(0xFF8B949E)),
+                            ),
+                          ]),
+                          style: const TextStyle(
+                            fontFamily: 'Courier New',
+                            fontSize: 11,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cfgLabel(String text) {
+    return Text(text,
+        style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11));
+  }
+
+  Widget _statItem(String label, String value, Color color) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label ',
+          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
+      Text(value,
+          style: TextStyle(
+              color: color, fontSize: 13, fontWeight: FontWeight.bold)),
+    ]);
+  }
+
+  Widget _controlButton({
+    required String label,
+    required Color color,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      height: 80,
+      child: ElevatedButton(
+        onPressed: enabled ? onPressed : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: color.withAlpha(100),
+          disabledForegroundColor: Colors.white54,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          elevation: 0,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 28),
+            const SizedBox(height: 4),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _actionColor(String action) {
+    return switch (action) {
+      'PAUSE' => const Color(0xFFF85149),
+      'RESUME' => const Color(0xFF3FB950),
+      'CHARGE' => const Color(0xFF388BFD),
+      _ => const Color(0xFF8B949E),
+    };
+  }
+
+  String _fmtTs(DateTime dt) =>
+      '${dt.hour.toString().padLeft(2, '0')}:'
+      '${dt.minute.toString().padLeft(2, '0')}:'
+      '${dt.second.toString().padLeft(2, '0')}.'
+      '${dt.millisecond.toString().padLeft(3, '0')}';
+
+  // ── API 명령 전송 ─────────────────────────────────────────────────────────
+
+  void _addLog(String action, bool success, String message) {
+    setState(() {
+      _commLog.add(_CommLogEntry(
+        timestamp: DateTime.now(),
+        action: action,
+        isSuccess: success,
+        message: message,
+      ));
+      // 최대 50개 유지
+      if (_commLog.length > 50) _commLog.removeAt(0);
+    });
+  }
+
+  /// Dahua RCS API: controlDevice (Pause / Resume)
+  Future<void> _sendControlCommand(int controlWay) async {
+    if (_selectedRobotId == null) return;
+    final action = controlWay == 0 ? 'PAUSE' : 'RESUME';
+    final cfg = SetupService.instance.config;
+    final url = '${cfg.fmsBaseUrl}/ics/out/controlDevice';
+    final payload = <String, dynamic>{
+      'areaId': cfg.areaId,
+      'deviceNumber': _selectedRobotId,
+      'all': 0,
+      'controlWay': controlWay,
+    };
+    if (controlWay == 0) payload['stopType'] = 1; // 즉시 정지
+
+    setState(() => _isSendingCommand = true);
+    _addLog(action, true, 'POST $url → ${jsonEncode(payload)}');
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final ok = response.statusCode == 200 && body['code'] == 1000;
+      _addLog(action, ok,
+          'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
+
+      // 즉시 UI 반영 (optimistic update)
+      if (ok) {
+        if (controlWay == 0) {
+          _service.sendStop(_selectedRobotId!);
+        } else {
+          _service.sendResume(_selectedRobotId!);
+        }
+      }
+    } catch (e) {
+      _addLog(action, false, 'ERROR: $e');
+    } finally {
+      setState(() => _isSendingCommand = false);
+    }
+  }
+
+  /// Dahua RCS API: gocharging (Charge)
+  Future<void> _sendChargeCommand() async {
+    if (_selectedRobotId == null) return;
+    const action = 'CHARGE';
+    final cfg = SetupService.instance.config;
+    final url = '${cfg.fmsBaseUrl}/ics/out/gocharging';
+    final payload = {'deviceNumber': _selectedRobotId};
+
+    setState(() => _isSendingCommand = true);
+    _addLog(action, true, 'POST $url → ${jsonEncode(payload)}');
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final ok = response.statusCode == 200 && body['code'] == 1000;
+      _addLog(action, ok,
+          'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
+    } catch (e) {
+      _addLog(action, false, 'ERROR: $e');
+    } finally {
+      setState(() => _isSendingCommand = false);
+    }
   }
 
   // ── UWB 소스 배지 ─────────────────────────────────────────────────────────
@@ -538,46 +954,222 @@ class _RobotScreenState extends State<RobotScreen> {
       dotColor = r.color;
     }
 
+    final isSelected = r.id == _selectedRobotId;
+
     return Positioned(
       left: (r.currentX / maxX) * w - dotSize / 2,
       top: (1 - r.currentY / maxY) * h - totalHeight / 2,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Stack(alignment: Alignment.center, children: [
-          // 상태별 링 표시
-          if (isSafetyStopped)
-            Container(
-              width: dotSize + 8,
-              height: dotSize + 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.red, width: 2),
+      child: GestureDetector(
+        onTap: () => setState(() =>
+            _selectedRobotId = _selectedRobotId == r.id ? null : r.id),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Stack(alignment: Alignment.center, children: [
+            // 선택 링
+            if (isSelected)
+              Container(
+                width: dotSize + 12,
+                height: dotSize + 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withAlpha(100),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+              )
+            // 상태별 링 표시
+            else if (isSafetyStopped)
+              Container(
+                width: dotSize + 8,
+                height: dotSize + 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.red, width: 2),
+                ),
+              )
+            else if (isFault)
+              Container(
+                width: dotSize + 8,
+                height: dotSize + 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.yellow.shade700, width: 2),
+                ),
+              )
+            else if (isOffline)
+              Container(
+                width: dotSize + 8,
+                height: dotSize + 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey, width: 2),
+                ),
               ),
-            )
-          else if (isFault)
-            Container(
-              width: dotSize + 8,
-              height: dotSize + 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.yellow.shade700, width: 2),
-              ),
-            )
-          else if (isOffline)
-            Container(
-              width: dotSize + 8,
-              height: dotSize + 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.grey, width: 2),
-              ),
-            ),
-          RobotDot(color: dotColor),
-          if (overlayIcon != null)
-            Icon(overlayIcon, color: Colors.white, size: 14),
+            RobotDot(color: dotColor),
+            if (overlayIcon != null)
+              Icon(overlayIcon, color: Colors.white, size: 14),
+          ]),
+          const SizedBox(height: spacing),
+          Text(r.id, style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: isSelected ? Colors.blue : Colors.black,
+          )),
         ]),
-        const SizedBox(height: spacing),
-        Text(r.id, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-      ]),
+      ),
     );
   }
+
+  // ── 맵 내부 컨트롤 바 ────────────────────────────────────────────────────
+
+  Widget _mapControlBar() {
+    final selectedRobot = _robots.cast<RobotData?>().firstWhere(
+          (r) => r!.id == _selectedRobotId,
+          orElse: () => null,
+        );
+    if (selectedRobot == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E).withAlpha(230),
+        border: const Border(top: BorderSide(color: Color(0xFF21262D))),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 상단: 로봇 정보
+          Row(children: [
+            Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selectedRobot.color,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              selectedRobot.id,
+              style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(width: 12),
+            _miniStat('STATE',
+                selectedRobot.status == RobotStatus.moving ? 'Moving' : 'Stopped',
+                selectedRobot.status == RobotStatus.moving
+                    ? const Color(0xFF79C0FF) : const Color(0xFFF85149)),
+            const SizedBox(width: 10),
+            if (selectedRobot.battery != null)
+              _miniStat('BAT', '${selectedRobot.battery}%',
+                  const Color(0xFF3FB950)),
+            const SizedBox(width: 10),
+            _miniStat('PAUSE',
+                selectedRobot.pauseFlag ? 'ON' : 'OFF',
+                selectedRobot.pauseFlag
+                    ? const Color(0xFFF85149) : const Color(0xFF3FB950)),
+            const Spacer(),
+            // 연결 상태 도트
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selectedRobot.deviceState == DeviceState.offline
+                    ? const Color(0xFFF85149)
+                    : const Color(0xFF3FB950),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          // 하단: PAUSE / RESUME / CHARGE 버튼
+          Row(children: [
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(0),
+                  icon: const Icon(Icons.pause_circle_filled, size: 18),
+                  label: const Text('PAUSE',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF85149),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFF85149).withAlpha(100),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(1),
+                  icon: const Icon(Icons.play_circle_filled, size: 18),
+                  label: const Text('RESUME',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF238636),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF238636).withAlpha(100),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _isSendingCommand ? null : _sendChargeCommand,
+                  icon: const Icon(Icons.battery_charging_full, size: 18),
+                  label: const Text('CHARGE',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1F6FEB),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF1F6FEB).withAlpha(100),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, String value, Color color) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label ',
+          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 9)),
+      Text(value,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+    ]);
+  }
+}
+
+/// 통신 로그 항목
+class _CommLogEntry {
+  final DateTime timestamp;
+  final String action;
+  final bool isSuccess;
+  final String message;
+
+  const _CommLogEntry({
+    required this.timestamp,
+    required this.action,
+    required this.isSuccess,
+    required this.message,
+  });
 }

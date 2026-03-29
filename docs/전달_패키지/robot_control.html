@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Robot Control</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    color: #c9d1d9;
+    font-family: 'Courier New', Consolas, monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── 설정 바 ── */
+  #config-bar {
+    background: #0d1117;
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid #21262d;
+  }
+  #config-bar label { color: #8b949e; font-size: 11px; }
+  #config-bar input {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    width: 140px;
+  }
+  #config-bar input:focus { outline: none; border-color: #58a6ff; }
+  .cfg-group { display: flex; align-items: center; gap: 6px; }
+
+  /* ── 상태 바 ── */
+  #status-bar {
+    background: #16213e;
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+    border-bottom: 1px solid #21262d;
+  }
+  .stat { display: flex; align-items: center; gap: 6px; }
+  .stat-label { color: #8b949e; font-size: 10px; }
+  .stat-val { font-size: 13px; font-weight: bold; }
+  #val-state  { color: #79c0ff; }
+  #val-pos    { color: #e3b341; }
+  #val-pause  { color: #8b949e; }
+  #val-bat    { color: #3fb950; }
+  #conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #8b949e; margin-left: auto;
+  }
+  #conn-dot.ok  { background: #3fb950; }
+  #conn-dot.err { background: #f85149; }
+
+  /* ── 버튼 영역 ── */
+  #btn-area {
+    padding: 24px 20px;
+    display: flex;
+    gap: 16px;
+  }
+  .ctrl-btn {
+    flex: 1;
+    height: 90px;
+    border: none;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 22px;
+    font-weight: bold;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: opacity 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ctrl-btn:active { transform: scale(0.96); }
+  .ctrl-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+  #btn-pause  { background: #f85149; color: #fff; }
+  #btn-resume { background: #238636; color: #fff; }
+  #btn-charge { background: #1f6feb; color: #fff; }
+
+  /* ── 로그창 ── */
+  #log-header {
+    background: #161b22;
+    padding: 6px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #21262d;
+  }
+  #log-header span { color: #8b949e; font-size: 11px; }
+  #btn-clear {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #log {
+    flex: 1;
+    background: #0d1117;
+    padding: 10px 12px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* 로그 색상 */
+  .ts       { color: #484f58; }
+  .url      { color: #a5d6ff; }
+  .send-kw  { color: #79c0ff; }
+  .pause-kw { color: #f85149; font-weight: bold; }
+  .resume-kw{ color: #3fb950; font-weight: bold; }
+  .charge-kw{ color: #388bfd; font-weight: bold; }
+  .http-ok  { color: #3fb950; font-weight: bold; }
+  .http-err { color: #f85149; font-weight: bold; }
+  .recv-ok  { color: #3fb950; }
+  .recv-err { color: #f85149; }
+  .info     { color: #8b949e; }
+  .poll-kw  { color: #6e7681; }
+  .arrow    { color: #484f58; }
+</style>
+</head>
+<body>
+
+<!-- 설정 -->
+<div id="config-bar">
+  <div class="cfg-group">
+    <label>IP</label>
+    <input id="cfg-ip"   value="10.0.4.104">
+  </div>
+  <div class="cfg-group">
+    <label>PORT</label>
+    <input id="cfg-port" value="7000" style="width:70px">
+  </div>
+  <div class="cfg-group">
+    <label>ROBOT ID</label>
+    <input id="cfg-id"   value="0001" style="width:80px">
+  </div>
+</div>
+
+<!-- 상태 바 -->
+<div id="status-bar">
+  <div class="stat">
+    <span class="stat-label">STATE</span>
+    <span class="stat-val" id="val-state">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">POS</span>
+    <span class="stat-val" id="val-pos">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">PAUSE</span>
+    <span class="stat-val" id="val-pause">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">BAT</span>
+    <span class="stat-val" id="val-bat">—</span>
+  </div>
+  <div id="conn-dot" title="연결 상태"></div>
+</div>
+
+<!-- 버튼 -->
+<div id="btn-area">
+  <button class="ctrl-btn" id="btn-pause"  onclick="sendControl(0)">PAUSE</button>
+  <button class="ctrl-btn" id="btn-resume" onclick="sendControl(1)">RESUME</button>
+  <button class="ctrl-btn" id="btn-charge" onclick="sendCharge()">CHARGE</button>
+</div>
+
+<!-- 로그 -->
+<div id="log-header">
+  <span>통신 로그</span>
+  <button id="btn-clear" onclick="clearLog()">Clear</button>
+</div>
+<div id="log"></div>
+
+<script>
+// ── 설정 읽기 ────────────────────────────────────────────────────────────────
+function base()    { return `http://${document.getElementById('cfg-ip').value}:${document.getElementById('cfg-port').value}`; }
+function robotId() { return document.getElementById('cfg-id').value; }
+
+// ── 타임스탬프 ───────────────────────────────────────────────────────────────
+function ts() {
+  const d = new Date();
+  const pad = (n, w=2) => String(n).padStart(w, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+// ── 로그 추가 ────────────────────────────────────────────────────────────────
+function appendLog(html) {
+  const el = document.getElementById('log');
+  el.innerHTML += html + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').innerHTML = ''; }
+
+function logSend(action, url, payload) {
+  const tag = action === 'PAUSE' ? 'pause-kw' : (action === 'RESUME' ? 'resume-kw' : 'charge-kw');
+  appendLog(
+    `<span class="ts">[${ts()}]</span> ` +
+    `<span class="${tag}">▶ ${action.padEnd(6)}</span> ` +
+    `<span class="send-kw">POST </span><span class="url">${url}</span>\n` +
+    `<span class="ts">               → </span>` +
+    `<span class="info">${JSON.stringify(payload)}</span>`
+  );
+}
+
+function logRecv(action, status, resp, ok) {
+  const tag  = ok ? 'recv-ok'  : 'recv-err';
+  const htag = ok ? 'http-ok'  : 'http-err';
+  const mark = ok ? '✓' : '✗';
+  appendLog(
+    `<span class="ts">[${ts()}]</span> ` +
+    `<span class="${tag}">  ${mark} ${action.padEnd(6)}</span> ` +
+    `<span class="${htag}">HTTP ${status}  </span>` +
+    `<span class="arrow">← </span>` +
+    `<span class="info">${JSON.stringify(resp)}</span>`
+  );
+}
+
+function logPoll(url, state, pos, pause, battery) {
+  appendLog(
+    `<span class="ts">[${ts()}]</span> ` +
+    `<span class="poll-kw">● POLL   </span>` +
+    `<span class="send-kw">POST </span><span class="url">${url}</span>\n` +
+    `<span class="ts">               ← </span>` +
+    `<span class="poll-kw">state=${state}  pos=${pos}  pause=${pause}  bat=${battery}%</span>`
+  );
+}
+
+function logError(action, msg) {
+  appendLog(
+    `<span class="ts">[${ts()}]</span> ` +
+    `<span class="recv-err">  ✗ ${action.padEnd(6)} ERROR  </span>` +
+    `<span class="info">${msg}</span>`
+  );
+}
+
+// ── CHARGE 전송 ──────────────────────────────────────────────────────────────
+async function sendCharge() {
+  const action  = 'CHARGE';
+  const url     = `${base()}/ics/out/gocharging`;
+  const payload = { deviceNumber: robotId() };
+
+  document.getElementById('btn-charge').disabled = true;
+  logSend(action, url, payload);
+
+  try {
+    const r    = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const resp = await r.json();
+    const ok   = resp.code === 1000;
+    logRecv(action, r.status, resp, ok);
+  } catch (e) {
+    logError(action, e.message);
+  } finally {
+    document.getElementById('btn-charge').disabled = false;
+  }
+}
+
+// ── PAUSE / RESUME 전송 ───────────────────────────────────────────────────────
+async function sendControl(controlWay) {
+  const action  = controlWay === 0 ? 'PAUSE' : 'RESUME';
+  const url     = `${base()}/ics/out/controlDevice`;
+  const payload = { areaId: 1, deviceNumber: robotId(), all: 0, controlWay };
+  if (controlWay === 0) payload.stopType = 1;
+
+  document.getElementById('btn-pause').disabled  = true;
+  document.getElementById('btn-resume').disabled = true;
+  logSend(action, url, payload);
+
+  try {
+    const r    = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const resp = await r.json();
+    const ok   = resp.code === 1000;
+    logRecv(action, r.status, resp, ok);
+  } catch (e) {
+    logError(action, e.message);
+  } finally {
+    document.getElementById('btn-pause').disabled  = false;
+    document.getElementById('btn-resume').disabled = false;
+  }
+}
+
+// ── 상태 폴링 (1.5초) ─────────────────────────────────────────────────────────
+let lastPollSummary = null;
+
+async function pollState() {
+  const url     = `${base()}/ics/out/device/list/deviceInfo`;
+  const payload = { areaId: '1', deviceType: '0' };
+  const dot     = document.getElementById('conn-dot');
+
+  try {
+    const r    = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await r.json();
+    const rb   = (data.data || []).find(d => d.deviceName === robotId()) || {};
+
+    dot.className = 'ok';
+
+    const state     = rb.state          ?? '—';
+    const pos       = rb.devicePosition ?? '—';
+    const pauseFlag = rb.pauseFlag      ?? '—';
+    const battery   = rb.battery        ?? '—';
+    const pauseText = pauseFlag === 1 ? 'ON' : 'OFF';
+
+    // 상태 바 업데이트
+    const stateColors = { InTask: '#79c0ff', Idle: '#3fb950', Fault: '#f85149', Offline: '#8b949e' };
+    document.getElementById('val-state').style.color = stateColors[state] || '#c9d1d9';
+    document.getElementById('val-state').textContent = state;
+    document.getElementById('val-pos').textContent   = pos;
+    document.getElementById('val-pause').style.color = pauseFlag === 1 ? '#f85149' : '#3fb950';
+    document.getElementById('val-pause').textContent = pauseText;
+    document.getElementById('val-bat').textContent   = battery !== '—' ? `${battery}%` : '—';
+
+    // 상태 변경 시에만 로그
+    const summary = `${state}|${pos}|${pauseFlag}|${battery}`;
+    if (summary !== lastPollSummary) {
+      lastPollSummary = summary;
+      logPoll(url, state, pos, pauseText, battery);
+    }
+  } catch (e) {
+    dot.className = 'err';
+    const summary = `ERR|${e.message}`;
+    if (summary !== lastPollSummary) {
+      lastPollSummary = summary;
+      logError('POLL', e.message);
+    }
+  }
+
+  setTimeout(pollState, 1500);
+}
+
+// 시작
+pollState();
+</script>
+</body>
+</html>

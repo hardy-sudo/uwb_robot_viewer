@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Large binary SDK files (GitHub 100MB limit)
+docs/**/*.zip
+docs/**/*.dmg
+docs/**/*.exe
+docs/**/*.sh

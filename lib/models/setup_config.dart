@@ -32,6 +32,8 @@ class RobotMappingEntry {
 class SetupConfig {
   String centerName;
   String locationName;
+  String region;   // 지역 (선택)
+  String floor;    // 층 (선택)
   String panId;
   String fmsBaseUrl;
   int areaId;
@@ -48,6 +50,8 @@ class SetupConfig {
   SetupConfig({
     this.centerName = '',
     this.locationName = '',
+    this.region = '',
+    this.floor = '',
     this.panId = '',
     this.fmsBaseUrl = 'http://10.0.4.94:8080',
     this.areaId = 1,
@@ -65,6 +69,8 @@ class SetupConfig {
   SetupConfig copy() => SetupConfig(
         centerName: centerName,
         locationName: locationName,
+        region: region,
+        floor: floor,
         panId: panId,
         fmsBaseUrl: fmsBaseUrl,
         areaId: areaId,

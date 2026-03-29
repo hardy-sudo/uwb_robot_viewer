@@ -34,9 +34,11 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
 
   void _enterRegistered(SetupConfig center) {
     final ctx = AppContext(
-      region: '등록',
+      region: center.region.isNotEmpty ? center.region : '등록',
       site: center.centerName,
-      floor: center.locationName,
+      floor: center.floor.isNotEmpty
+          ? center.floor
+          : (center.locationName.isNotEmpty ? center.locationName : '-'),
     );
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => RobotMapRouterScreen(ctx: ctx)));
@@ -89,7 +91,8 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
                     SetupService.instance.setActiveCenter(center);
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (_) => const SetupScreen(initialTab: 0)));
+                          builder: (_) => const SetupScreen(initialTab: 0)),
+                    ).then((_) => setState(() {}));
                   },
                 ),
               ),
@@ -164,7 +167,8 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
             icon: const Icon(Icons.settings),
             tooltip: 'Setup',
             onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SetupScreen())),
+                MaterialPageRoute(builder: (_) => const SetupScreen()))
+                .then((_) => setState(() {})),
           ),
           TextButton(onPressed: _logout, child: const Text('Logout')),
           const SizedBox(width: 8),
@@ -240,7 +244,7 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const SetupScreen(initialTab: 0)),
-                ),
+                ).then((_) => setState(() {})),
               ),
             ),
           ),

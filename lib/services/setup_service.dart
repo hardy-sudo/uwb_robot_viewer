@@ -38,6 +38,8 @@ class SetupService {
   void setActiveCenter(SetupConfig center) {
     config.centerName = center.centerName;
     config.locationName = center.locationName;
+    config.region = center.region;
+    config.floor = center.floor;
     config.panId = center.panId;
     config.fmsBaseUrl = center.fmsBaseUrl;
     config.areaId = center.areaId;
