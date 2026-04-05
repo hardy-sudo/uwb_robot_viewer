@@ -27,4 +27,34 @@ class SafetyZone {
     this.zoneColor = const Color(0xFF4CAF50),
   })  : polygon = polygon ?? [],
         anchorIds = anchorIds ?? [];
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'polygon': polygon.map((o) => {'dx': o.dx, 'dy': o.dy}).toList(),
+        'anchorIds': anchorIds,
+        'safetyEnabled': safetyEnabled,
+        'customThresholdStopM': customThresholdStopM,
+        'customThresholdResumeM': customThresholdResumeM,
+        'zoneColor': zoneColor.value,
+      };
+
+  factory SafetyZone.fromJson(Map<String, dynamic> j) => SafetyZone(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        polygon: (j['polygon'] as List<dynamic>?)
+                ?.map((o) => Offset(
+                      (o['dx'] as num).toDouble(),
+                      (o['dy'] as num).toDouble(),
+                    ))
+                .toList() ??
+            [],
+        anchorIds: (j['anchorIds'] as List<dynamic>?)?.cast<String>() ?? [],
+        safetyEnabled: j['safetyEnabled'] as bool? ?? true,
+        customThresholdStopM:
+            (j['customThresholdStopM'] as num?)?.toDouble(),
+        customThresholdResumeM:
+            (j['customThresholdResumeM'] as num?)?.toDouble(),
+        zoneColor: Color(j['zoneColor'] as int? ?? 0xFF4CAF50),
+      );
 }

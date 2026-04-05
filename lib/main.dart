@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
+import 'services/setup_service.dart';
+import 'services/tag_group_service.dart';
+import 'services/map_zone_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Future.wait([
+    SetupService.instance.load(),
+    TagGroupService.instance.load(),
+    MapZoneService.instance.load(),
+  ]);
   runApp(const MyApp());
 }
 

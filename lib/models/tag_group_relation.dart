@@ -15,4 +15,23 @@ class TagGroupRelation {
     this.isActive = true,
   }) : assert(thresholdStopM < thresholdResumeM,
             'thresholdStopM must be < thresholdResumeM');
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'groupAId': groupAId,
+        'groupBId': groupBId,
+        'thresholdStopM': thresholdStopM,
+        'thresholdResumeM': thresholdResumeM,
+        'isActive': isActive,
+      };
+
+  factory TagGroupRelation.fromJson(Map<String, dynamic> j) =>
+      TagGroupRelation(
+        id: j['id'] as String,
+        groupAId: j['groupAId'] as String,
+        groupBId: j['groupBId'] as String,
+        thresholdStopM: (j['thresholdStopM'] as num?)?.toDouble() ?? 3.0,
+        thresholdResumeM: (j['thresholdResumeM'] as num?)?.toDouble() ?? 3.1,
+        isActive: j['isActive'] as bool? ?? true,
+      );
 }

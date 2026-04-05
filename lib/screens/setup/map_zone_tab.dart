@@ -38,11 +38,11 @@ class _MapZoneTabState extends State<MapZoneTab>
   void _applyImageUrl() {
     final url = _urlCtrl.text.trim();
     setState(() {
-      _svc.mapConfig = MapConfig(
+      _svc.setMapConfig(MapConfig(
         id: 'map_1',
         locationId: 'loc_1',
         imageUrl: url,
-      );
+      ));
     });
   }
 
@@ -76,13 +76,15 @@ class _MapZoneTabState extends State<MapZoneTab>
     showDialog(
       context: context,
       builder: (ctx) => _ZoneNameDialog(
-        onSave: (name, safetyOn, anchorIds) {
+        onSave: (name, safetyOn, anchorIds, customStopM, customResumeM) {
           final zone = SafetyZone(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             name: name,
             polygon: polygon,
             anchorIds: anchorIds,
             safetyEnabled: safetyOn,
+            customThresholdStopM: customStopM,
+            customThresholdResumeM: customResumeM,
             zoneColor: safetyOn ? Colors.green : Colors.red,
           );
           setState(() {
@@ -102,13 +104,17 @@ class _MapZoneTabState extends State<MapZoneTab>
         initialName: zone.name,
         initialSafetyOn: zone.safetyEnabled,
         initialAnchorIds: List.from(zone.anchorIds),
-        onSave: (name, safetyOn, anchorIds) {
+        initialCustomStopM: zone.customThresholdStopM,
+        initialCustomResumeM: zone.customThresholdResumeM,
+        onSave: (name, safetyOn, anchorIds, customStopM, customResumeM) {
           setState(() {
             zone.name = name;
             zone.safetyEnabled = safetyOn;
             zone.anchorIds
               ..clear()
               ..addAll(anchorIds);
+            zone.customThresholdStopM = customStopM;
+            zone.customThresholdResumeM = customResumeM;
             zone.zoneColor = safetyOn ? Colors.green : Colors.red;
           });
         },
@@ -310,7 +316,8 @@ class _MapZoneTabState extends State<MapZoneTab>
             title: Text(zone.name, style: const TextStyle(fontSize: 13)),
             subtitle: Text(
               '꼭짓점 ${zone.polygon.length}개'
-              '${zone.anchorIds.isNotEmpty ? ' · Anchor ${zone.anchorIds.length}개' : ''}',
+              '${zone.anchorIds.isNotEmpty ? ' · Anchor ${zone.anchorIds.length}개' : ''}'
+              '${zone.customThresholdStopM != null ? ' · ${zone.customThresholdStopM}/${zone.customThresholdResumeM}m' : ''}',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: Row(
@@ -322,6 +329,7 @@ class _MapZoneTabState extends State<MapZoneTab>
                     setState(() {
                       zone.safetyEnabled = v;
                       zone.zoneColor = v ? Colors.green : Colors.red;
+                      _svc.updateZone(zone);
                     });
                   },
                 ),
@@ -346,16 +354,26 @@ class _MapZoneTabState extends State<MapZoneTab>
 // ── Zone 이름 입력 다이얼로그 (StatefulWidget으로 분리해 controller 생명주기 관리) ──
 
 class _ZoneNameDialog extends StatefulWidget {
-  final void Function(String name, bool safetyOn, List<String> anchorIds) onSave;
+  final void Function(
+    String name,
+    bool safetyOn,
+    List<String> anchorIds,
+    double? customStopM,
+    double? customResumeM,
+  ) onSave;
   final String initialName;
   final bool initialSafetyOn;
   final List<String> initialAnchorIds;
+  final double? initialCustomStopM;
+  final double? initialCustomResumeM;
 
   const _ZoneNameDialog({
     required this.onSave,
     this.initialName = '',
     this.initialSafetyOn = true,
     this.initialAnchorIds = const [],
+    this.initialCustomStopM,
+    this.initialCustomResumeM,
   });
 
   @override
@@ -364,7 +382,10 @@ class _ZoneNameDialog extends StatefulWidget {
 
 class _ZoneNameDialogState extends State<_ZoneNameDialog> {
   late final TextEditingController _nameCtrl;
+  late final TextEditingController _stopCtrl;
+  late final TextEditingController _resumeCtrl;
   late bool _safetyOn;
+  late bool _useCustomThreshold;
   late final Set<String> _selectedAnchorIds;
 
   @override
@@ -372,12 +393,19 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.initialName);
     _safetyOn = widget.initialSafetyOn;
+    _useCustomThreshold = widget.initialCustomStopM != null;
+    _stopCtrl = TextEditingController(
+        text: widget.initialCustomStopM?.toString() ?? '');
+    _resumeCtrl = TextEditingController(
+        text: widget.initialCustomResumeM?.toString() ?? '');
     _selectedAnchorIds = Set.from(widget.initialAnchorIds);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _stopCtrl.dispose();
+    _resumeCtrl.dispose();
     super.dispose();
   }
 
@@ -422,6 +450,55 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
                     color: _safetyOn ? Colors.green : Colors.grey),
               ),
               const SizedBox(height: 16),
+              Row(children: [
+                const Text('Zone별 Threshold 사용',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Spacer(),
+                Switch(
+                  value: _useCustomThreshold,
+                  onChanged: (v) => setState(() => _useCustomThreshold = v),
+                ),
+              ]),
+              if (_useCustomThreshold) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _stopCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '정지 거리 (m)',
+                        hintText: '예: 2.0',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _resumeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '재개 거리 (m)',
+                        hintText: '예: 2.2',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  '미입력 시 글로벌 Threshold 사용',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
+              const SizedBox(height: 16),
               const Text('Anchor 할당',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               const SizedBox(height: 4),
@@ -457,10 +534,18 @@ class _ZoneNameDialogState extends State<_ZoneNameDialog> {
           onPressed: _nameCtrl.text.trim().isEmpty
               ? null
               : () {
+                  double? customStop;
+                  double? customResume;
+                  if (_useCustomThreshold) {
+                    customStop = double.tryParse(_stopCtrl.text.trim());
+                    customResume = double.tryParse(_resumeCtrl.text.trim());
+                  }
                   widget.onSave(
                     _nameCtrl.text.trim(),
                     _safetyOn,
                     _selectedAnchorIds.toList(),
+                    customStop,
+                    customResume,
                   );
                   Navigator.pop(context);
                 },

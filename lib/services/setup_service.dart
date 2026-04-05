@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/setup_config.dart';
 
 enum TestStatus { idle, running, success, failure }
@@ -20,6 +21,9 @@ class SetupService {
   static final instance = SetupService._();
   SetupService._();
 
+  static const _keyActiveConfig = 'hammer_active_config';
+  static const _keyCenters = 'hammer_centers';
+
   final config = SetupConfig();
 
   final List<SetupConfig> _centers = [];
@@ -32,6 +36,7 @@ class SetupService {
     if (config.centerName.isEmpty) return;
     _centers.removeWhere((c) => c.centerName == config.centerName);
     _centers.add(config.copy());
+    save().ignore();
   }
 
   /// 선택한 센터를 활성 config로 복사 (SetupScreen 편집용)
@@ -55,6 +60,57 @@ class SetupService {
     config.robotMappings
       ..clear()
       ..addAll(center.robotMappings);
+    save().ignore();
+  }
+
+  /// 설정을 SharedPreferences에 저장
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyActiveConfig, jsonEncode(config.toJson()));
+    await prefs.setString(
+      _keyCenters,
+      jsonEncode(_centers.map((c) => c.toJson()).toList()),
+    );
+  }
+
+  /// SharedPreferences에서 설정 복원
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final centersStr = prefs.getString(_keyCenters);
+    if (centersStr != null) {
+      final list = jsonDecode(centersStr) as List<dynamic>;
+      _centers
+        ..clear()
+        ..addAll(list.map(
+            (e) => SetupConfig.fromJson(e as Map<String, dynamic>)));
+    }
+
+    final configStr = prefs.getString(_keyActiveConfig);
+    if (configStr != null) {
+      final loaded = SetupConfig.fromJson(
+          jsonDecode(configStr) as Map<String, dynamic>);
+      // setActiveCenter을 재사용해 모든 필드 복사 (save 호출 없이)
+      config.centerName = loaded.centerName;
+      config.locationName = loaded.locationName;
+      config.region = loaded.region;
+      config.floor = loaded.floor;
+      config.panId = loaded.panId;
+      config.fmsBaseUrl = loaded.fmsBaseUrl;
+      config.areaId = loaded.areaId;
+      config.thresholdStopM = loaded.thresholdStopM;
+      config.thresholdResumeM = loaded.thresholdResumeM;
+      config.cooldownMs = loaded.cooldownMs;
+      config.anchors
+        ..clear()
+        ..addAll(loaded.anchors);
+      config.tags
+        ..clear()
+        ..addAll(loaded.tags);
+      config.robotMappings
+        ..clear()
+        ..addAll(loaded.robotMappings);
+    }
   }
 
   /// FMS에서 로봇 ID 목록 조회

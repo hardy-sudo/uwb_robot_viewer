@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show Offset;
 import '../models/robot_data.dart';
+import '../models/safety_zone.dart';
 import '../models/setup_config.dart';
 import '../models/uwb_distance_event.dart';
 import 'map_zone_service.dart';
@@ -174,14 +176,12 @@ class UwbSafetyService {
     var stopThresh = _stopThresholdFor(event.humanTagId, event.robotTagId);
     var resumeThresh = _resumeThresholdFor(event.humanTagId, event.robotTagId);
 
-    // TASK 3: anchorId가 있으면 Zone Safety 설정 적용
-    if (event.anchorId != null) {
-      final zone = MapZoneService.instance.getZoneByAnchorId(event.anchorId!);
-      if (zone != null) {
-        if (!zone.safetyEnabled) return; // Zone Safety 비활성 → 이벤트 무시
-        if (zone.customThresholdStopM != null) stopThresh = zone.customThresholdStopM!;
-        if (zone.customThresholdResumeM != null) resumeThresh = zone.customThresholdResumeM!;
-      }
+    // TASK 3: Zone Safety — 수동 할당 우선, Anchor 위치 기반 폴리곤 fallback
+    final zone = _findZoneForEvent(event);
+    if (zone != null) {
+      if (!zone.safetyEnabled) return; // Zone Safety 비활성 → 이벤트 무시
+      if (zone.customThresholdStopM != null) stopThresh = zone.customThresholdStopM!;
+      if (zone.customThresholdResumeM != null) resumeThresh = zone.customThresholdResumeM!;
     }
 
     if (safetyState == SafetyState.safe &&
@@ -192,6 +192,31 @@ class UwbSafetyService {
         minDist > resumeThresh) {
       _triggerResume(robotId, event, minDist);
     }
+  }
+
+  // ── Zone 탐색 (TASK 3) ────────────────────────────────────────────────────
+
+  /// anchorId → Zone 탐색.
+  /// 우선순위: ① Zone.anchorIds 수동 할당 → ② Anchor 맵 위치가 Zone 폴리곤 내 포함
+  SafetyZone? _findZoneForEvent(UwbDistanceEvent event) {
+    if (event.anchorId == null) return null;
+
+    // ① 수동 할당
+    final byId = MapZoneService.instance.getZoneByAnchorId(event.anchorId!);
+    if (byId != null) return byId;
+
+    // ② 위치 기반: Anchor 맵 좌표(0.0~1.0)가 Zone 폴리곤 내에 있는지 판별
+    AnchorData? anchor;
+    for (final a in SetupService.instance.config.anchors) {
+      if (a.id == event.anchorId) {
+        anchor = a;
+        break;
+      }
+    }
+    if (anchor == null || !anchor.placed) return null;
+
+    return MapZoneService.instance
+        .getZoneForPosition(Offset(anchor.mapXRatio, anchor.mapYRatio));
   }
 
   // ── Pause / Resume 트리거 ──────────────────────────────────────────────────
