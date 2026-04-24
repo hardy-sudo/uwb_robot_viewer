@@ -3,6 +3,7 @@ import 'screens/login_screen.dart';
 import 'services/setup_service.dart';
 import 'services/tag_group_service.dart';
 import 'services/map_zone_service.dart';
+import 'services/movelens_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,7 @@ void main() async {
     SetupService.instance.load(),
     TagGroupService.instance.load(),
     MapZoneService.instance.load(),
+    MoveLensService.instance.load(),
   ]);
   runApp(const MyApp());
 }

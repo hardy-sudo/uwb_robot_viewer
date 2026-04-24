@@ -34,6 +34,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.0
   flutter_libserialport: ^0.6.0
+  pdf: ^3.10.8
+  printing: ^5.13.1
 
 
 

@@ -6,6 +6,7 @@ import '../services/setup_service.dart';
 import 'login_screen.dart';
 import 'robot_map_router.dart';
 import 'setup/setup_screen.dart';
+import 'movelens/movelens_home_screen.dart';
 
 class ContextSelectScreen extends StatefulWidget {
   const ContextSelectScreen({super.key});
@@ -234,7 +235,7 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
           )),
         )),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -245,6 +246,25 @@ class _ContextSelectScreenState extends State<ContextSelectScreen> {
                   MaterialPageRoute(
                       builder: (_) => const SetupScreen(initialTab: 0)),
                 ).then((_) => setState(() {})),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('MoveLens 공정 진단'),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.black45),
+                  foregroundColor: Colors.black87,
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const MoveLensHomeScreen()),
+                ),
               ),
             ),
           ),

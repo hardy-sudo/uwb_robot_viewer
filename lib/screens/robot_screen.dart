@@ -231,11 +231,6 @@ class _RobotScreenState extends State<RobotScreen> {
 
             const SizedBox(height: 16),
 
-            // ── 로봇 컨트롤 패널 ─────────────────────────────────────────────
-            _robotControlPanel(),
-
-            const SizedBox(height: 12),
-
             // ── 로봇 상태 목록 ───────────────────────────────────────────────
             const Text('로봇 상태', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
@@ -407,7 +402,7 @@ class _RobotScreenState extends State<RobotScreen> {
                   color: const Color(0xFF1F6FEB),
                   icon: Icons.battery_charging_full,
                   enabled: _selectedRobotId != null && !_isSendingCommand,
-                  onPressed: _sendChargeCommand,
+                  onPressed: () => _sendChargeCommand(),
                 ),
               ),
             ]),
@@ -580,14 +575,17 @@ class _RobotScreenState extends State<RobotScreen> {
   }
 
   /// Dahua RCS API: controlDevice (Pause / Resume)
-  Future<void> _sendControlCommand(int controlWay) async {
-    if (_selectedRobotId == null) return;
+  /// Dahua RCS API: controlDevice (Pause / Resume)
+  /// [robotId] 지정 시 해당 로봇에, 없으면 현재 _selectedRobotId 에 명령
+  Future<void> _sendControlCommand(int controlWay, {String? robotId}) async {
+    final id = robotId ?? _selectedRobotId;
+    if (id == null) return;
     final action = controlWay == 0 ? 'PAUSE' : 'RESUME';
     final cfg = SetupService.instance.config;
     final url = '${cfg.fmsBaseUrl}/ics/out/controlDevice';
     final payload = <String, dynamic>{
       'areaId': cfg.areaId,
-      'deviceNumber': _selectedRobotId,
+      'deviceNumber': id,
       'all': 0,
       'controlWay': controlWay,
     };
@@ -607,15 +605,13 @@ class _RobotScreenState extends State<RobotScreen> {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final ok = response.statusCode == 200 && body['code'] == 1000;
-      _addLog(action, ok,
-          'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
+      _addLog(action, ok, 'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
 
-      // 즉시 UI 반영 (optimistic update)
       if (ok) {
         if (controlWay == 0) {
-          _service.sendStop(_selectedRobotId!);
+          _service.sendStop(id);
         } else {
-          _service.sendResume(_selectedRobotId!);
+          _service.sendResume(id);
         }
       }
     } catch (e) {
@@ -626,12 +622,13 @@ class _RobotScreenState extends State<RobotScreen> {
   }
 
   /// Dahua RCS API: gocharging (Charge)
-  Future<void> _sendChargeCommand() async {
-    if (_selectedRobotId == null) return;
+  Future<void> _sendChargeCommand({String? robotId}) async {
+    final id = robotId ?? _selectedRobotId;
+    if (id == null) return;
     const action = 'CHARGE';
     final cfg = SetupService.instance.config;
     final url = '${cfg.fmsBaseUrl}/ics/out/gocharging';
-    final payload = {'deviceNumber': _selectedRobotId};
+    final payload = {'deviceNumber': id};
 
     setState(() => _isSendingCommand = true);
     _addLog(action, true, 'POST $url → ${jsonEncode(payload)}');
@@ -647,8 +644,7 @@ class _RobotScreenState extends State<RobotScreen> {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final ok = response.statusCode == 200 && body['code'] == 1000;
-      _addLog(action, ok,
-          'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
+      _addLog(action, ok, 'HTTP ${response.statusCode} ← ${jsonEncode(body)}');
     } catch (e) {
       _addLog(action, false, 'ERROR: $e');
     } finally {
@@ -729,68 +725,59 @@ class _RobotScreenState extends State<RobotScreen> {
     final isFault = r.deviceState == DeviceState.fault;
     final isOffline = r.deviceState == DeviceState.offline;
     final uwbDist = _safetyService?.latestMinDistances[r.id];
+    final busy = _isSendingCommand;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            // 색상 인디케이터
-            Container(
-              width: 14, height: 14,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: r.color),
-            ),
-            const SizedBox(width: 8),
+    // 카드 테두리 색 결정
+    final borderColor = isSafetyStopped
+        ? Colors.red
+        : isFault
+            ? Colors.yellow.shade700
+            : isOffline
+                ? Colors.grey
+                : r.color;
 
-            // 로봇 ID
-            SizedBox(width: 30, child: Text(r.id, style: const TextStyle(fontWeight: FontWeight.w600))),
-            const SizedBox(width: 8),
-
-            // 좌표
-            SizedBox(
-              width: 160,
-              child: Text(
-                'X: ${r.currentX.toStringAsFixed(2)}  Y: ${r.currentY.toStringAsFixed(2)}',
-                style: const TextStyle(fontFamily: 'monospace'),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: borderColor.withAlpha(180), width: 1.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── 상단: 로봇 정보 행 ────────────────────────────────
+            Row(children: [
+              // 색상 인디케이터
+              Container(
+                width: 12, height: 12,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: r.color),
               ),
-            ),
-            const SizedBox(width: 8),
+              const SizedBox(width: 8),
 
-            // 이동 상태 뱃지
-            _badge(
-              isStopped ? 'STOPPED' : 'MOVING',
-              isStopped ? Colors.red : Colors.green,
-            ),
-            const SizedBox(width: 4),
+              // 로봇 ID
+              Text(r.id,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(width: 10),
 
-            // Safety 상태 뱃지
-            if (isSafetyStopped)
-              _badge('SAFETY STOP', Colors.red, icon: Icons.warning_rounded)
-            else
-              _badge('SAFE', Colors.teal, icon: Icons.shield),
-            const SizedBox(width: 4),
+              // 좌표
+              Text(
+                'X: ${r.currentX.toStringAsFixed(2)}  Y: ${r.currentY.toStringAsFixed(2)}',
+                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey[700]),
+              ),
 
-            // 기기 장치 상태 뱃지
-            if (isFault)
-              _badge('FAULT', Colors.yellow.shade700, icon: Icons.error_outline)
-            else if (isOffline)
-              _badge('OFFLINE', Colors.grey, icon: Icons.wifi_off),
-            const SizedBox(width: 4),
+              const Spacer(),
 
-            // pauseFlag 뱃지
-            if (r.pauseFlag)
-              _badge('PAUSE', Colors.deepOrange, icon: Icons.pause_circle_outline),
-            const SizedBox(width: 8),
-
-            // UWB 거리
-            if (uwbDist != null)
-              SizedBox(
-                width: 72,
-                child: Text(
-                  'UWB ${uwbDist.toStringAsFixed(2)}m',
+              // UWB 거리
+              if (uwbDist != null) ...[
+                Icon(Icons.sensors, size: 14,
+                    color: uwbDist < 3.0 ? Colors.red : Colors.grey),
+                const SizedBox(width: 3),
+                Text(
+                  '${uwbDist.toStringAsFixed(2)}m',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: uwbDist < 3.0
                         ? Colors.red
@@ -799,74 +786,124 @@ class _RobotScreenState extends State<RobotScreen> {
                             : Colors.grey,
                   ),
                 ),
-              )
-            else
-              const SizedBox(width: 72),
+                const SizedBox(width: 10),
+              ],
 
-            const Spacer(),
-
-            // 수동 Stop 버튼
-            ElevatedButton(
-              onPressed: isStopped ? null : () => _service.sendStop(r.id),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              child: const Text('Stop'),
-            ),
-            const SizedBox(width: 4),
-
-            // Charge 버튼
-            ElevatedButton(
-              onPressed: isOffline ? null : () => _service.sendCharge(r.id),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              child: const Text('Charge'),
-            ),
-          ]),
-
-          // 배터리 / 위치 정보 (있을 때만 표시)
-          if (r.battery != null || r.devicePosition != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 22, top: 2),
-              child: Row(children: [
-                if (r.battery != null) ...[
-                  Icon(
-                    r.battery! > 50
-                        ? Icons.battery_full
-                        : r.battery! > 20
-                            ? Icons.battery_3_bar
-                            : Icons.battery_alert,
-                    size: 13,
-                    color: r.battery! > 20 ? Colors.grey : Colors.red,
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${r.battery}%',
+              // 배터리
+              if (r.battery != null) ...[
+                Icon(
+                  r.battery! > 50 ? Icons.battery_full
+                      : r.battery! > 20 ? Icons.battery_3_bar
+                      : Icons.battery_alert,
+                  size: 14,
+                  color: r.battery! > 20 ? Colors.grey : Colors.red,
+                ),
+                const SizedBox(width: 3),
+                Text('${r.battery}%',
                     style: TextStyle(
-                      fontSize: 11,
-                      color: r.battery! > 20 ? Colors.grey.shade600 : Colors.red,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                if (r.devicePosition != null && r.devicePosition!.isNotEmpty) ...[
-                  Icon(Icons.location_on, size: 13, color: Colors.grey.shade500),
-                  const SizedBox(width: 2),
-                  Text(
-                    r.devicePosition!,
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  ),
-                ],
-              ]),
-            ),
-        ],
+                        fontSize: 12,
+                        color: r.battery! > 20 ? Colors.grey[600] : Colors.red)),
+                const SizedBox(width: 10),
+              ],
+            ]),
+
+            const SizedBox(height: 8),
+
+            // ── 중단: 상태 뱃지 행 ───────────────────────────────
+            Row(children: [
+              _badge(isStopped ? 'STOPPED' : 'MOVING',
+                  isStopped ? Colors.red : Colors.green),
+              const SizedBox(width: 6),
+              if (isSafetyStopped)
+                _badge('SAFETY STOP', Colors.red, icon: Icons.warning_rounded)
+              else
+                _badge('SAFE', Colors.teal, icon: Icons.shield),
+              if (isFault) ...[
+                const SizedBox(width: 6),
+                _badge('FAULT', Colors.yellow.shade700, icon: Icons.error_outline),
+              ] else if (isOffline) ...[
+                const SizedBox(width: 6),
+                _badge('OFFLINE', Colors.grey, icon: Icons.wifi_off),
+              ],
+              if (r.pauseFlag) ...[
+                const SizedBox(width: 6),
+                _badge('PAUSED', Colors.deepOrange, icon: Icons.pause_circle_outline),
+              ],
+              if (r.devicePosition != null && r.devicePosition!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.location_on, size: 12, color: Colors.grey[500]),
+                const SizedBox(width: 2),
+                Text(r.devicePosition!,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              ],
+            ]),
+
+            const SizedBox(height: 10),
+
+            // ── 하단: 제어 버튼 행 ───────────────────────────────
+            Row(children: [
+              // PAUSE
+              Expanded(
+                child: _tileActionButton(
+                  label: 'PAUSE',
+                  icon: Icons.pause_circle_filled,
+                  color: const Color(0xFFE53935),
+                  enabled: !busy && !isOffline && !isStopped,
+                  onPressed: () => _sendControlCommand(0, robotId: r.id),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // RESUME
+              Expanded(
+                child: _tileActionButton(
+                  label: 'RESUME',
+                  icon: Icons.play_circle_filled,
+                  color: const Color(0xFF2E7D32),
+                  enabled: !busy && !isOffline && isStopped,
+                  onPressed: () => _sendControlCommand(1, robotId: r.id),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // CHARGE
+              Expanded(
+                child: _tileActionButton(
+                  label: 'CHARGE',
+                  icon: Icons.battery_charging_full,
+                  color: const Color(0xFF1565C0),
+                  enabled: !busy && !isOffline,
+                  onPressed: () => _sendChargeCommand(robotId: r.id),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tileActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: ElevatedButton.icon(
+        onPressed: enabled ? onPressed : null,
+        icon: Icon(icon, size: 18),
+        label: Text(label,
+            style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey.shade200,
+          disabledForegroundColor: Colors.grey.shade400,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          elevation: 0,
+          padding: EdgeInsets.zero,
+        ),
       ),
     );
   }
@@ -1090,7 +1127,7 @@ class _RobotScreenState extends State<RobotScreen> {
               child: SizedBox(
                 height: 44,
                 child: ElevatedButton.icon(
-                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(0),
+                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(0, robotId: selectedRobot.id),
                   icon: const Icon(Icons.pause_circle_filled, size: 18),
                   label: const Text('PAUSE',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
@@ -1109,7 +1146,7 @@ class _RobotScreenState extends State<RobotScreen> {
               child: SizedBox(
                 height: 44,
                 child: ElevatedButton.icon(
-                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(1),
+                  onPressed: _isSendingCommand ? null : () => _sendControlCommand(1, robotId: selectedRobot.id),
                   icon: const Icon(Icons.play_circle_filled, size: 18),
                   label: const Text('RESUME',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
@@ -1128,7 +1165,7 @@ class _RobotScreenState extends State<RobotScreen> {
               child: SizedBox(
                 height: 44,
                 child: ElevatedButton.icon(
-                  onPressed: _isSendingCommand ? null : _sendChargeCommand,
+                  onPressed: _isSendingCommand ? null : () => _sendChargeCommand(robotId: selectedRobot.id),
                   icon: const Icon(Icons.battery_charging_full, size: 18),
                   label: const Text('CHARGE',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),

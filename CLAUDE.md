@@ -145,7 +145,8 @@ UWB는 기본 Mock 모드이며, RobotScreen 상단 아이콘으로 Mock ↔ 실
 **싱글턴 서비스 목록**: `SetupService.instance` / `TagGroupService.instance` / `MapZoneService.instance`
 
 **`SetupService` 싱글턴** (`SetupService.instance`): 모든 탭이 동일한 `SetupConfig` 인스턴스를 공유/변경한다. 설정 저장 외에 FMS HTTP 호출도 담당한다: `loadRobotIds()` (로봇 ID 조회), `heartbeatTest()` (5회×1Hz Stream), `safetyFunctionTest(robotId)` (Pause→3s→Resume Stream) — connection_test_tab.dart가 사용.
-**주의**: 현재 설정은 in-memory 상태만 유지되며, 앱 재시작 시 초기화된다 (퍼시스턴스 미구현).
+
+**퍼시스턴스**: `SetupService` / `TagGroupService` / `MapZoneService` 모두 SharedPreferences로 저장/복원. `main()`에서 `await Future.wait([...instance.load()])` 호출로 앱 시작 시 자동 복원됨. SharedPreferences 키: `hammer_active_config`, `hammer_centers`, `hammer_tag_groups`, `hammer_tag_relations`, `hammer_map_config`, `hammer_safety_zones`.
 
 `SetupService`는 다중 센터를 지원한다: `addCenter(config)` — `centerName` 중복 시 덮어씀, `setActiveCenter(center)` — 선택한 센터를 활성 config로 복사(SetupScreen 편집용), `centers` — 불변 목록. `ContextSelectScreen`에서 등록된 센터 목록을 표시하며, 각 센터 탭 시 "설정 편집" / "맵 바로 가기" 바텀시트 노출.
 
@@ -182,13 +183,20 @@ macOS 요구사항: `brew install libserialport` + Entitlements에 `com.apple.se
 - Relation별 `thresholdStopM` / `thresholdResumeM` 개별 적용
 - `tagGroupService == null`이면 `SetupConfig` 글로벌 threshold 사용 (하위 호환)
 
-### Map & Safety Zone (TASK 3 — Zone Safety 로직 스텁)
+### Map & Safety Zone (TASK 3 — 구현 완료)
 
-- `MapZoneService` 싱글턴: `MapConfig?` + `List<SafetyZone>` in-memory 관리
+- `MapZoneService` 싱글턴: `MapConfig?` + `List<SafetyZone>` 관리 (SharedPreferences 퍼시스턴스)
 - `SafetyZone.polygon`: 0.0~1.0 정규화 캔버스 좌표 (실좌표 변환은 `CoordinateConverter` 사용)
-- `ZonePainter`: ON=반투명 녹색(`#3300FF00`), OFF=반투명 빨강(`#33FF0000`)
+- `SafetyZone.anchorIds`: 수동으로 할당된 UWB Anchor ID 목록 (Zone 탐색 우선순위 ①)
+- `SafetyZone.customThresholdStopM` / `customThresholdResumeM`: Zone별 개별 threshold (null이면 Relation/글로벌 기본값 사용)
+- `ZonePainter`: `safetyEnabled=true`→반투명 녹색 fill(`#3300FF00`)+녹색 테두리, `false`→반투명 빨강 fill(`#33FF0000`)+빨강 테두리
 - `CoordinateConverter`: 픽셀↔실좌표 변환 + Ray Casting Point-in-Polygon
-- `UwbSafetyService`의 Zone 체크 로직은 `// TODO:` 스텁 상태 (UWB 좌표 수신 확인 후 완성)
+- `UwbDistanceEvent.anchorId`: optional 필드 — Zone 탐색에 사용 (null이면 Zone 체크 스킵)
+
+**Zone Safety 탐색 우선순위** (`_findZoneForEvent`):
+1. `event.anchorId`가 있으면 → `MapZoneService.getZoneByAnchorId()` (수동 할당 우선)
+2. fallback → `SetupService.config.anchors`에서 `anchorId` 매칭 후 맵 위치(0.0~1.0)로 `getZoneForPosition()` (Anchor가 `placed=true`여야 함)
+3. Zone `safetyEnabled=false`이면 해당 이벤트 무시 (정지 명령 발행 안 함)
 
 ## 신규 서비스 구현 시 체크리스트 (TASK 2+3 추가분)
 
