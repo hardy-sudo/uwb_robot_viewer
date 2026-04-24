@@ -6,7 +6,8 @@ import '../models/robot_data.dart';
 import '../models/uwb_distance_event.dart';
 import '../services/dahua_robot_service.dart';
 import '../services/mock_uwb_service.dart';
-import '../services/real_uwb_service.dart';
+import '../services/real_uwb_service.dart'
+    if (dart.library.html) '../services/real_uwb_service_stub.dart';
 import '../services/robot_service.dart';
 import '../services/setup_service.dart';
 import '../services/uwb_safety_service.dart';
